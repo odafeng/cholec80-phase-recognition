@@ -21,3 +21,6 @@ __pycache__/
 # --- editor / OS ---
 .vscode/
 .DS_Store
+
+# project-local notes, not for public repo
+CLAUDE.md
