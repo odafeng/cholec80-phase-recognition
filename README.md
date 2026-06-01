@@ -61,3 +61,17 @@ precision/recall/jaccard.
 Run the whole pipeline on a few videos (e.g. ids 1,2,33,41) before the full run
 to confirm everything is wired correctly, using `--only` on extract_frames and
 small `--epochs`.
+
+## Results (test = videos 41-80, 32/8/40 split)
+
+| Metric | MS-TCN (non-causal) | TeCNO (causal) |
+|---|:---:|:---:|
+| Frame accuracy | **90.81%** | 88.95% |
+| Video-avg accuracy | 90.80% (±6.40) | 88.96% (±5.92) |
+| Mean Precision | 87.3 | 84.2 |
+| Mean Recall | 86.0 | 82.2 |
+| Mean Jaccard | 76.3 | 71.4 |
+
+Stage-1 ResNet50 per-frame val accuracy: 81.75%. The temporal model lifts this by
+~9%. MS-TCN (sees future) edges out causal TeCNO by ~1.8%, as expected; TeCNO's
+88.96% closely reproduces the original paper (~88.6%).
