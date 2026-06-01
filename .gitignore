@@ -1,0 +1,23 @@
+# --- data & dataset (NEVER commit; Cholec80 is license-restricted, ~70GB) ---
+data/
+/data
+frames/
+features/
+features_smoke/
+
+# --- model artifacts ---
+checkpoints/
+*.pt
+*.pth
+
+# --- environment ---
+.venv/
+__pycache__/
+*.pyc
+
+# --- logs ---
+*.log
+
+# --- editor / OS ---
+.vscode/
+.DS_Store
