@@ -38,7 +38,8 @@ def find_videos(videos_dir: Path):
     return out
 
 
-def extract_one(video_path: Path, out_dir: Path, step: int = 25, size: int = 250):
+def extract_one(video_path: Path, out_dir: Path, step: int = 25, size: int = 250,
+                timeout: int = 1200):
     out_dir.mkdir(parents=True, exist_ok=True)
     # Resume guard: if frames already exist, skip.
     existing = list(out_dir.glob("*.jpg"))
@@ -49,13 +50,24 @@ def extract_one(video_path: Path, out_dir: Path, step: int = 25, size: int = 250
     vf = f"select='not(mod(n\\,{step}))',scale={size}:{size}"
     cmd = [
         "ffmpeg", "-hide_banner", "-loglevel", "error",
+        # error tolerance: some Cholec80 videos have a corrupt region that makes
+        # ffmpeg hang forever doing concealment. Drop corrupt packets instead.
+        "-err_detect", "ignore_err", "-fflags", "+discardcorrupt",
         "-i", str(video_path),
         "-vf", vf,
         "-vsync", "0",          # keep every selected frame, no dup/drop
         "-q:v", "2",            # high-quality jpg
         str(out_dir / "%08d.jpg"),
     ]
-    subprocess.run(cmd, check=True)
+    try:
+        # timeout is a backstop: a healthy video takes seconds-to-minutes, so a
+        # multi-minute stall means something is wrong -> fail fast, don't hang.
+        subprocess.run(cmd, check=True, timeout=timeout)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+        print(f"  [FAIL] {out_dir.name}: {type(e).__name__}; removing partial frames")
+        for f in out_dir.glob("*.jpg"):
+            f.unlink()
+        return 0
     n = len(list(out_dir.glob("*.jpg")))
     print(f"  [ok]   {out_dir.name}: {n} frames")
     return n
