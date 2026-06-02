@@ -24,3 +24,13 @@ __pycache__/
 
 # project-local notes, not for public repo
 CLAUDE.md
+
+# secrets / creds (NEVER commit)
+secrets.env
+*FILLED*
+*.telegram_creds
+.telegram_creds
+# run artifacts
+watcher.out
+*.out
+surgical-env-bootstrap*.tar.gz

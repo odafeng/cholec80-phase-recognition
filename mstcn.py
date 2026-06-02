@@ -17,7 +17,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-
+# 如果causal改成True其實就是TeCNO
 class DilatedResidualLayer(nn.Module):
     def __init__(self, dilation, in_ch, out_ch, causal=False, dropout=0.5):
         super().__init__()
