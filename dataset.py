@@ -41,6 +41,20 @@ def labels_1fps(phase_txt: Path, step: int = 25):
     return full[::step]
 
 
+def read_tool_file(tool_txt: Path):
+    """Tool annotations are ALREADY at 1 fps (one row per 25 frames). Return a
+    list of 7-d binary vectors, one per 1fps frame -> aligns by index with our
+    extracted frames and the 1fps phase labels."""
+    rows = []
+    with open(tool_txt) as f:
+        f.readline()  # header
+        for line in f:
+            parts = line.split()
+            if len(parts) >= 8:
+                rows.append([float(x) for x in parts[1:8]])
+    return rows
+
+
 # ---------- index building ---------------------------------------------------
 
 def video_frame_paths(frames_dir: Path):
@@ -92,3 +106,38 @@ class Cholec80FrameDataset(Dataset):
         img = Image.open(path).convert("RGB")
         img = self.transform(img)
         return img, torch.tensor(label, dtype=torch.long)
+
+
+def build_mtl_index(frames_root: Path, phase_root: Path, tool_root: Path,
+                    video_ids, step: int = 25):
+    """[(jpg_path, phase_id, tool_vec[7]), ...] for multi-task training."""
+    index = []
+    for i in video_ids:
+        vid = f"video{i:02d}"
+        fdir = frames_root / vid
+        if not fdir.is_dir():
+            continue
+        frames = video_frame_paths(fdir)
+        phases = labels_1fps(phase_root / f"{vid}-phase.txt", step)
+        tools = read_tool_file(tool_root / f"{vid}-tool.txt")
+        n = min(len(frames), len(phases), len(tools))
+        for k in range(n):
+            index.append((frames[k], phases[k], tools[k]))
+    return index
+
+
+class Cholec80MTLDataset(Dataset):
+    """Returns (img, phase_label, tool_vector) for multi-task Stage-1 training."""
+
+    def __init__(self, index, transform):
+        self.index = index
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.index)
+
+    def __getitem__(self, idx):
+        path, phase, tools = self.index[idx]
+        img = self.transform(Image.open(path).convert("RGB"))
+        return (img, torch.tensor(phase, dtype=torch.long),
+                torch.tensor(tools, dtype=torch.float32))

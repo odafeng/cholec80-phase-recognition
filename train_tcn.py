@@ -151,7 +151,8 @@ def main():
             # loads cleanly under torch>=2.6 weights_only=True.
             clean_cfg = {"arch": args.model, "stages": args.stages,
                          "layers": args.layers, "fmaps": args.fmaps,
-                         "d": args.d, "heads": args.heads, "causal": args.causal}
+                         "d": args.d, "heads": args.heads, "causal": args.causal,
+                         "in_dim": in_dim}
             torch.save({"model": model.state_dict(), "causal": args.causal,
                         "val_acc": acc, "epoch": ep,
                         "cfg": clean_cfg}, args.out)

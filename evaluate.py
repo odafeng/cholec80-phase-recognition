@@ -25,13 +25,14 @@ from train_tcn import load_features
 
 def build_from_ckpt(ckpt, device):
     cfg = ckpt["cfg"]
+    in_dim = cfg.get("in_dim", 2048)   # 2048 = ResNet50, 768 = EndoViT
     if cfg.get("arch", "mstcn") == "lovit":
-        model = LoViT(in_dim=2048, num_classes=NUM_PHASES, d=cfg["d"],
+        model = LoViT(in_dim=in_dim, num_classes=NUM_PHASES, d=cfg["d"],
                       heads=cfg["heads"], layers=cfg["layers"],
                       num_stages=cfg["stages"], causal=cfg["causal"]).to(device)
     else:
         model = MultiStageTCN(cfg["stages"], cfg["layers"], cfg["fmaps"],
-                              in_dim=2048, num_classes=NUM_PHASES,
+                              in_dim=in_dim, num_classes=NUM_PHASES,
                               causal=cfg["causal"]).to(device)
     model.load_state_dict(ckpt["model"])
     return model.eval()
