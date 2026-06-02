@@ -109,10 +109,15 @@ small `--epochs`.
 | LoViT-style (online)  | 86.19% | 65.0 |
 
 Stage-1 ResNet50 per-frame val accuracy: 81.75%; the temporal model lifts this by
-up to ~9%. TeCNO's 88.95% reproduces the original paper (~88.6%). Our from-scratch
-LoViT-style Transformer underperforms the TCNs here because the dataset is small
-(32 train videos) and the transformer overfits — see **[RESULTS.md](RESULTS.md)**
-for the full analysis and the "TCN beats Transformer on small data" lesson.
+up to ~9%. TeCNO's 88.95% reproduces the original paper (~88.6%).
+
+**Best model:** an ensemble over diverse features (ResNet50 + fine-tuned EndoViT,
+with fusion) reaches **video-averaged accuracy 91.53% / Jaccard 77.5**, beating the
+single-feature baseline (90.80 / 76.3) on the standard per-video metric. The gain
+came from **better/complementary features + ensembling, not a fancier temporal
+head** — our from-scratch LoViT-style Transformer overfit the 32-video set and lost
+to the TCNs. Full analysis, ablation, and the "features &gt; architecture on small
+data" lesson in **[RESULTS.md](RESULTS.md)**.
 
 ## Transformer temporal head (LoViT-style)
 `lovit.py` is a long-short causal Transformer (attention + conv, multi-stage),

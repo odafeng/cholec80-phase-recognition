@@ -55,9 +55,41 @@ a cleverer temporal head alone but from a **stronger / self-supervised feature
 extractor and large-scale pretraining**. The real lever for beating these
 baselines is **better Stage-1 features**, not a fancier Stage-2 model.
 
+## Pushing for SOTA: features + ensemble (what finally moved the needle)
+
+The Transformer head failed, so we attacked the real bottleneck — **features** —
+with four ablatable levers (all on the proven MS-TCN head, full-video context):
+① multi-task backbone (phase + **tool** supervision, previously unused),
+② feature fusion (ResNet50 ⊕ EndoViT), ③ deeper temporal head, ④ ensembling.
+
+EndoViT (egeozsoy/EndoViT) is a surgical-domain MAE ViT-B; fine-tuned 8 epochs it
+reaches **higher per-frame val (0.842) than ResNet50 (0.818)**.
+
+| MS-TCN on … | Frame acc | **Video-avg acc** | Mean Jacc |
+|---|:---:|:---:|:---:|
+| ResNet50 features (baseline) | **90.81%** | 90.80 ±6.4 | 76.3 |
+| multi-task (phase+tool) | 90.15% | 90.46 | — |
+| EndoViT-ft (8 ep) | 89.97% | 91.10 | — |
+| fuse: multitask ⊕ EndoViT | 90.17% | 91.18 | — |
+| fuse: ResNet50 ⊕ EndoViT | 90.51% | 91.31 ±6.3 | — |
+| **ensemble of 5 (diverse features)** | 90.70% | **91.53 ±6.9** | **77.5** |
+
+**Result: a real improvement on the standard video-averaged metric — 90.80 → 91.53
+(+0.73), Jaccard 76.3 → 77.5** — even though frame accuracy was already saturated
+(the long videos that dominate frame counts were already near-ceiling for the
+baseline). The gain came from **complementary features (ImageNet ResNet50 +
+surgical-domain EndoViT) and ensembling**, NOT from a fancier temporal head.
+
+Takeaway across the whole project: on small surgical datasets the temporal
+architecture matters less than (a) features and (b) ensembling. Reliable levers =
+domain-pretrained + task-fine-tuned features, feature fusion, multi-task auxiliary
+supervision, and ensembles; the data-hungry Transformer head was a net negative.
+
 ## Reproduce
 
 ```bash
-./run_full.sh     # Stage 0–2: frames → ResNet50 → features → MS-TCN + TeCNO → eval
-./run_lovit.sh    # trains LoViT (causal + offline) on the same features and compares all four
+./run_full.sh        # Stage 0–2: frames → ResNet50 → features → MS-TCN + TeCNO → eval
+./run_lovit.sh       # LoViT (causal + offline) temporal head on the same features
+./run_endovit_ft.sh  # fine-tune EndoViT (8 ep) → features → temporal heads
+./run_sota.sh        # 4 levers: multi-task + fusion + ensemble (best: video-avg 91.53)
 ```
