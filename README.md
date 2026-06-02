@@ -11,11 +11,48 @@ cd /home/KHUser/cholec80_phase
 PY=.venv/bin/python
 ```
 
-## 0. Data layout (after unzip)
-Expected (adjust paths to match the actual unzip):
+## 0. Getting the dataset
+
+The Cholec80 dataset is **not** in this repo (it is ~70 GB and license-restricted —
+request access from the [CAMMA group](http://camma.u-strasbg.fr/datasets)). We keep
+our copy as `cholec80.zip` in a **private** Cloudflare R2 bucket.
+
+### Download from R2 (with rclone)
+```bash
+# 1. install rclone
+curl https://rclone.org/install.sh | sudo bash
+
+# 2. configure an R2 remote (fill in YOUR own credentials — keep them secret)
+rclone config create r2 s3 \
+  provider=Cloudflare \
+  access_key_id=<YOUR_R2_ACCESS_KEY_ID> \
+  secret_access_key=<YOUR_R2_SECRET_ACCESS_KEY> \
+  endpoint=https://<YOUR_ACCOUNT_ID>.r2.cloudflarestorage.com \
+  region=auto no_check_bucket=true
+
+# 3. download (~70 GB)
+rclone copy r2:<YOUR_BUCKET>/cholec80.zip ./data/ --progress
 ```
-data/videos/             video01.mp4 ... video80.mp4
+
+### Upload notes (lessons learned)
+- Use an R2 API token with **Object Read & Write**; it cannot `ListBuckets` or
+  `CreateBucket`, so pass `--s3-no-check-bucket` on upload.
+- For a 70 GB file add **`--s3-disable-checksum`** — otherwise rclone hashes the
+  whole file first and appears to hang at `0 B/s` (it is busy in `s3.prepareUpload`).
+- Tune large uploads with `--s3-chunk-size 64M --s3-upload-concurrency 4`.
+- Keep the bucket **private** (disable the public `r2.dev` URL) — Cholec80's
+  license does not permit public redistribution.
+
+Then unzip into `data/`:
+```bash
+cd data && python -c "import zipfile; zipfile.ZipFile('cholec80.zip').extractall('.')"
+```
+
+## Data layout (after unzip)
+```
+data/videos/             video01.mp4 ... video80.mp4  (+ videoXX-timestamp.txt)
 data/phase_annotations/  video01-phase.txt ...
+data/tool_annotations/   video01-tool.txt ...         (used by train_cnn_mtl.py)
 ```
 
 ## 1. Extract frames at 1 fps  (Stage 0)
