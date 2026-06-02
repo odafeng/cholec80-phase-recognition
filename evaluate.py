@@ -17,6 +17,7 @@ from sklearn.metrics import (precision_score, recall_score, jaccard_score,
                              confusion_matrix)
 
 from mstcn import MultiStageTCN
+from lovit import LoViT
 from phases import NUM_PHASES, PHASES
 from splits import TEST_IDS
 from train_tcn import load_features
@@ -24,9 +25,14 @@ from train_tcn import load_features
 
 def build_from_ckpt(ckpt, device):
     cfg = ckpt["cfg"]
-    model = MultiStageTCN(cfg["stages"], cfg["layers"], cfg["fmaps"],
-                          in_dim=2048, num_classes=NUM_PHASES,
-                          causal=cfg["causal"]).to(device)
+    if cfg.get("arch", "mstcn") == "lovit":
+        model = LoViT(in_dim=2048, num_classes=NUM_PHASES, d=cfg["d"],
+                      heads=cfg["heads"], layers=cfg["layers"],
+                      num_stages=cfg["stages"], causal=cfg["causal"]).to(device)
+    else:
+        model = MultiStageTCN(cfg["stages"], cfg["layers"], cfg["fmaps"],
+                              in_dim=2048, num_classes=NUM_PHASES,
+                              causal=cfg["causal"]).to(device)
     model.load_state_dict(ckpt["model"])
     return model.eval()
 
@@ -43,7 +49,8 @@ def main():
     # that accidentally stored pathlib.Path objects in cfg.
     ckpt = torch.load(args.ckpt, map_location="cpu", weights_only=False)
     model = build_from_ckpt(ckpt, device)
-    name = "TeCNO (causal)" if ckpt.get("causal") else "MS-TCN (non-causal)"
+    arch = ckpt["cfg"].get("arch", "mstcn").upper()
+    name = f"{arch} ({'causal/online' if ckpt.get('causal') else 'non-causal/offline'})"
 
     test = load_features(args.features, TEST_IDS)
     all_pred, all_gt, vid_acc = [], [], []

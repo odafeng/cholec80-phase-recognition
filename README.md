@@ -64,14 +64,22 @@ small `--epochs`.
 
 ## Results (test = videos 41-80, 32/8/40 split)
 
-| Metric | MS-TCN (non-causal) | TeCNO (causal) |
+| Temporal model | Frame acc | Mean Jaccard |
 |---|:---:|:---:|
-| Frame accuracy | **90.81%** | 88.95% |
-| Video-avg accuracy | 90.80% (±6.40) | 88.96% (±5.92) |
-| Mean Precision | 87.3 | 84.2 |
-| Mean Recall | 86.0 | 82.2 |
-| Mean Jaccard | 76.3 | 71.4 |
+| **MS-TCN** (offline) | **90.81%** | 76.3 |
+| **TeCNO** (online)   | 88.95% | 71.4 |
+| LoViT-style (offline) | 83.22% | 61.8 |
+| LoViT-style (online)  | 86.19% | 65.0 |
 
-Stage-1 ResNet50 per-frame val accuracy: 81.75%. The temporal model lifts this by
-~9%. MS-TCN (sees future) edges out causal TeCNO by ~1.8%, as expected; TeCNO's
-88.96% closely reproduces the original paper (~88.6%).
+Stage-1 ResNet50 per-frame val accuracy: 81.75%; the temporal model lifts this by
+up to ~9%. TeCNO's 88.95% reproduces the original paper (~88.6%). Our from-scratch
+LoViT-style Transformer underperforms the TCNs here because the dataset is small
+(32 train videos) and the transformer overfits — see **[RESULTS.md](RESULTS.md)**
+for the full analysis and the "TCN beats Transformer on small data" lesson.
+
+## Transformer temporal head (LoViT-style)
+`lovit.py` is a long-short causal Transformer (attention + conv, multi-stage),
+a drop-in replacement for the TCN head:
+```bash
+./run_lovit.sh   # trains LoViT causal+offline on the same features, compares all four
+```
