@@ -34,7 +34,7 @@ model.load_state_dict(c["model"] if isinstance(c, dict) and "model" in c else c)
 @torch.no_grad()
 def infer(vid):
     ds = VideoClipDataset(video_id=vid, data_root="cholec80_preprocessed",
-                          phase_dir=os.path.abspath("phase_ann_pp"), tool_dir="_no_tools",
+                          phase_dir="phase_ann_pp", tool_dir="_no_tools",
                           seq_len=128, img_size=224, tag_format="video{:02d}")
     ld = DataLoader(ds, batch_size=1, shuffle=False, num_workers=4, pin_memory=True)
     slow, logits, labels = None, [], []
