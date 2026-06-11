@@ -18,9 +18,12 @@ while tmux has-session -t expansion 2>/dev/null \
       && ! grep -q EXPANSION_EXIT logs/expansion.log 2>/dev/null; do sleep 60; done
 echo "GPU free; starting MAE."
 
-say "MAE pretraining (ViT-B/16, from scratch) -- the long run"
-./run.sh mae_pretrain.py --frames data/frames_ssl --epochs 1600 --bs 512 \
-    --warmup 40 --save_every 25 --out checkpoints/surgmae 2>&1 | tee -a logs/mae_pretrain.log
+say "MAE pretraining (ViT-B/16, from scratch) -- ~1 week on GB10 (~155 img/s ceiling)"
+# GB10 does ~155 img/s for ViT-B MAE -> ~43 min/epoch -> 200 ep ~= 6 days.
+# Lighter decoder (384/4) is a small free win; the decoder is discarded anyway.
+./run.sh mae_pretrain.py --frames data/frames_ssl --epochs 200 --bs 512 \
+    --warmup 15 --dec_dim 384 --dec_depth 4 --save_every 10 \
+    --out checkpoints/surgmae 2>&1 | tee -a logs/mae_pretrain.log
 
 say "extract surgMAE features (all 80 videos @1fps)"
 ./run.sh extract_features_mae.py --frames data/frames --anno data/phase_annotations \

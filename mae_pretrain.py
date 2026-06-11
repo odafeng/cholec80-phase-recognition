@@ -197,10 +197,14 @@ def main():
     ap.add_argument("--wd", type=float, default=0.05)
     ap.add_argument("--workers", type=int, default=16)
     ap.add_argument("--mask_ratio", type=float, default=0.75)
-    ap.add_argument("--save_every", type=int, default=25)
+    ap.add_argument("--save_every", type=int, default=10)
+    ap.add_argument("--dec_dim", type=int, default=384, help="decoder width (discarded after pretrain)")
+    ap.add_argument("--dec_depth", type=int, default=4, help="decoder depth (lighter = faster on GB10)")
+    ap.add_argument("--compile", action="store_true", help="torch.compile the model")
     ap.add_argument("--out", type=Path, default=Path("checkpoints/surgmae"))
     args = ap.parse_args()
 
+    torch.set_float32_matmul_precision("high")
     device = "cuda" if torch.cuda.is_available() else "cpu"
     args.out.mkdir(parents=True, exist_ok=True)
     tf = transforms.Compose([
@@ -214,9 +218,13 @@ def main():
                     pin_memory=True, drop_last=True, persistent_workers=True)
     print(f"frames={len(ds)}  steps/epoch={len(ld)}  bs={args.bs}")
 
-    model = MAE(mask_ratio=args.mask_ratio).to(device)
+    model = MAE(mask_ratio=args.mask_ratio, dec_dim=args.dec_dim,
+                dec_depth=args.dec_depth).to(device)
     nparams = sum(p.numel() for p in model.parameters()) / 1e6
     print(f"MAE params: {nparams:.1f}M")
+    if args.compile:
+        model = torch.compile(model)
+        print("torch.compile enabled")
     eff_lr = args.lr * args.bs / 256
     opt = torch.optim.AdamW(model.parameters(), lr=eff_lr, betas=(0.9, 0.95),
                             weight_decay=args.wd)
