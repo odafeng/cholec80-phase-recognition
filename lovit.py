@@ -116,16 +116,19 @@ class _Stage(nn.Module):
         self.blocks = nn.ModuleList([ConformerBlock(d, heads, causal) for _ in range(layers)])
         self.cls = nn.Linear(d, num_classes)
 
-    def forward(self, x):                          # x: (B, T, in_dim)
+    def forward(self, x, return_feat=False):       # x: (B, T, in_dim)
         h = self.in_proj(x)
         for blk in self.blocks:
             h = blk(h)
-        return self.cls(h)                         # (B, T, num_classes)
+        logits = self.cls(h)                       # (B, T, num_classes)
+        if return_feat:
+            return logits, h                       # h = penultimate (B, T, d)
+        return logits
 
 
 class LoViT(nn.Module):
     def __init__(self, in_dim=2048, num_classes=7, d=256, heads=8,
-                 layers=5, num_stages=2, causal=True):
+                 layers=5, num_stages=2, causal=True, boundary=False):
         super().__init__()
         self.stage1 = _Stage(in_dim, d, heads, layers, num_classes, causal)
         # refinement stages consume the previous stage's class probabilities
@@ -133,14 +136,20 @@ class LoViT(nn.Module):
             _Stage(num_classes, d, heads, max(2, layers // 2), num_classes, causal)
             for _ in range(num_stages - 1)
         ])
+        # Optional auxiliary boundary head (BUA), off by default.
+        self.boundary = boundary
+        if boundary:
+            self.boundary_head = nn.Linear(d, 1)
 
-    def forward(self, x):                          # x: (B, in_dim, T)
+    def forward(self, x, return_boundary=False):   # x: (B, in_dim, T)
         x = x.transpose(1, 2)                      # (B, T, in_dim)
-        out = self.stage1(x)                       # (B, T, C)
+        out, feat = self.stage1(x, return_feat=True)   # out (B,T,C), feat (B,T,d)
         outputs = [out.transpose(1, 2)]            # (B, C, T)
         for stage in self.refine:
-            out = stage(F.softmax(out, dim=-1))
+            out, feat = stage(F.softmax(out, dim=-1), return_feat=True)
             outputs.append(out.transpose(1, 2))
+        if return_boundary:                        # training-time auxiliary output
+            return outputs, self.boundary_head(feat).transpose(1, 2)   # (B, 1, T)
         return outputs
 
 

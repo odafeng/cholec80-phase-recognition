@@ -34,3 +34,9 @@ secrets.env
 watcher.out
 *.out
 surgical-env-bootstrap*.tar.gz
+
+# --- reliability-plan outputs ---
+results/
+*.npz
+*.temp.json
+docs/figures/

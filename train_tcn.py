@@ -15,14 +15,17 @@ Run (MS-TCN):  python train_tcn.py --features features --out checkpoints/mstcn.p
 Run (TeCNO) :  python train_tcn.py --features features --out checkpoints/tecno.pt --causal
 """
 import argparse
+import random
 from pathlib import Path
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from mstcn import MultiStageTCN
 from lovit import LoViT
+from asformer import ASFormer
 from phases import NUM_PHASES
 from splits import TRAIN_IDS, VAL_IDS
 
@@ -72,6 +75,42 @@ def mstcn_loss(outputs, labels, lam=0.15, tau=4):
     return total
 
 
+def set_seed(seed):
+    """Seed everything for reproducible multi-seed runs / deep ensembling."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
+
+def boundary_targets(labels, tol=10):
+    """labels (T,) -> (T,) float in {0,1}: 1 within +/-tol of a GT transition."""
+    T = labels.shape[0]
+    tgt = torch.zeros(T, device=labels.device)
+    if T > 1:
+        trans = (labels[1:] != labels[:-1]).nonzero().flatten() + 1
+        for b in trans.tolist():
+            tgt[max(0, b - tol): min(T, b + tol)] = 1.0
+    return tgt
+
+
+def bua_loss(outputs, b_logits, labels, tol=10, w_wce=0.5, w_bce=1.0):
+    """BUA boundary terms, ADDITIVE to mstcn_loss (RESEARCH_PLAN.md):
+      - boundary-weighted CE: extra CE focused on frames near GT transitions,
+      - boundary-head BCE: predict the boundary region, class-balanced.
+    """
+    tgt = boundary_targets(labels, tol)                       # (T,)
+    last = outputs[-1].squeeze(0).t()                         # (T, C)
+    ce_frames = F.cross_entropy(last, labels, reduction="none")  # (T,)
+    wce = (ce_frames * tgt).sum() / tgt.sum().clamp(min=1.0)
+    pos = tgt.sum()
+    neg = tgt.numel() - pos
+    pos_weight = (neg / pos.clamp(min=1.0)).clamp(max=20.0)
+    bce = F.binary_cross_entropy_with_logits(
+        b_logits.squeeze(0).squeeze(0), tgt, pos_weight=pos_weight)
+    return w_wce * wce + w_bce * bce
+
+
 @torch.no_grad()
 def val_accuracy(model, data, device):
     model.eval()
@@ -89,7 +128,7 @@ def main():
     ap.add_argument("--features", required=True, type=Path)
     ap.add_argument("--out", required=True, type=Path)
     ap.add_argument("--causal", action="store_true", help="causal -> online (TeCNO/LoViT-online)")
-    ap.add_argument("--model", choices=["mstcn", "lovit"], default="mstcn")
+    ap.add_argument("--model", choices=["mstcn", "lovit", "asformer"], default="mstcn")
     ap.add_argument("--stages", type=int, default=2)
     ap.add_argument("--layers", type=int, default=9, help="mstcn: 9; lovit: ~5")
     ap.add_argument("--fmaps", type=int, default=64, help="mstcn feature maps")
@@ -98,8 +137,12 @@ def main():
     ap.add_argument("--epochs", type=int, default=40)
     ap.add_argument("--lr", type=float, default=5e-4)
     ap.add_argument("--augment", action="store_true", help="temporal crop + feature jitter")
+    ap.add_argument("--boundary", action="store_true",
+                    help="BUA: auxiliary boundary head + boundary-weighted loss")
+    ap.add_argument("--seed", type=int, default=0, help="seed everything (multi-seed runs)")
     args = ap.parse_args()
 
+    set_seed(args.seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     tag = "causal/online" if args.causal else "non-causal/offline"
     name = f"{args.model.upper()} ({tag})"
@@ -113,10 +156,16 @@ def main():
     if args.model == "lovit":
         model = LoViT(in_dim=in_dim, num_classes=NUM_PHASES, d=args.d,
                       heads=args.heads, layers=args.layers,
-                      num_stages=args.stages, causal=args.causal).to(device)
+                      num_stages=args.stages, causal=args.causal,
+                      boundary=args.boundary).to(device)
+    elif args.model == "asformer":
+        model = ASFormer(in_dim=in_dim, num_classes=NUM_PHASES, num_stages=args.stages,
+                         num_layers=args.layers, d=args.d, heads=args.heads,
+                         causal=args.causal, boundary=args.boundary).to(device)
     else:
         model = MultiStageTCN(args.stages, args.layers, args.fmaps,
-                              in_dim, NUM_PHASES, causal=args.causal).to(device)
+                              in_dim, NUM_PHASES, causal=args.causal,
+                              boundary=args.boundary).to(device)
     n_param = sum(p.numel() for p in model.parameters())
     print(f"params: {n_param/1e6:.1f}M")
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
@@ -135,8 +184,12 @@ def main():
                 feats, labels = temporal_augment(feats, labels)
             feats, labels = feats.to(device), labels.to(device)
             opt.zero_grad()
-            outputs = model(feats)
-            loss = mstcn_loss(outputs, labels)
+            if args.boundary:
+                outputs, b_logits = model(feats, return_boundary=True)
+                loss = mstcn_loss(outputs, labels) + bua_loss(outputs, b_logits, labels)
+            else:
+                outputs = model(feats)
+                loss = mstcn_loss(outputs, labels)
             loss.backward()
             # gradient clipping: prevents the loss-spike divergence that the
             # transformer (LoViT) otherwise hits mid-training.
@@ -152,7 +205,8 @@ def main():
             clean_cfg = {"arch": args.model, "stages": args.stages,
                          "layers": args.layers, "fmaps": args.fmaps,
                          "d": args.d, "heads": args.heads, "causal": args.causal,
-                         "in_dim": in_dim}
+                         "in_dim": in_dim, "boundary": args.boundary,
+                         "seed": args.seed}
             torch.save({"model": model.state_dict(), "causal": args.causal,
                         "val_acc": acc, "epoch": ep,
                         "cfg": clean_cfg}, args.out)

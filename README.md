@@ -117,7 +117,7 @@ single-feature baseline (90.80 / 76.3) on the standard per-video metric. The gai
 came from **better/complementary features + ensembling, not a fancier temporal
 head** — our from-scratch LoViT-style Transformer overfit the 32-video set and lost
 to the TCNs. Full analysis, ablation, and the "features &gt; architecture on small
-data" lesson in **[RESULTS.md](RESULTS.md)**.
+data" lesson in **[RESULTS.md](docs/RESULTS.md)**.
 
 ## Transformer temporal head (LoViT-style)
 `lovit.py` is a long-short causal Transformer (attention + conv, multi-stage),

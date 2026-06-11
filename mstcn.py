@@ -55,11 +55,14 @@ class SingleStageTCN(nn.Module):
         ])
         self.conv_out = nn.Conv1d(num_f_maps, num_classes, 1)
 
-    def forward(self, x):
+    def forward(self, x, return_feat=False):
         out = self.conv_in(x)
         for layer in self.layers:
             out = layer(out)
-        return self.conv_out(out)
+        logits = self.conv_out(out)
+        if return_feat:
+            return logits, out          # out = penultimate (num_f_maps, T) features
+        return logits
 
 
 class MultiStageTCN(nn.Module):
@@ -67,20 +70,28 @@ class MultiStageTCN(nn.Module):
     the previous stage's softmax prediction."""
 
     def __init__(self, num_stages=2, num_layers=9, num_f_maps=64,
-                 in_dim=2048, num_classes=7, causal=False):
+                 in_dim=2048, num_classes=7, causal=False, boundary=False):
         super().__init__()
         self.stage1 = SingleStageTCN(num_layers, num_f_maps, in_dim, num_classes, causal)
         self.stages = nn.ModuleList([
             copy.deepcopy(SingleStageTCN(num_layers, num_f_maps, num_classes, num_classes, causal))
             for _ in range(num_stages - 1)
         ])
+        # Optional auxiliary boundary head (BUA): predicts "near a phase
+        # transition" from the LAST stage's penultimate features. Off by default
+        # so existing checkpoints/behaviour are byte-identical.
+        self.boundary = boundary
+        if boundary:
+            self.boundary_head = nn.Conv1d(num_f_maps, 1, 1)
 
-    def forward(self, x):
-        out = self.stage1(x)
+    def forward(self, x, return_boundary=False):
+        out, feat = self.stage1(x, return_feat=True)
         outputs = [out]
         for stage in self.stages:
-            out = stage(F.softmax(out, dim=1))
+            out, feat = stage(F.softmax(out, dim=1), return_feat=True)
             outputs.append(out)
+        if return_boundary:                       # training-time auxiliary output
+            return outputs, self.boundary_head(feat)   # (B, 1, T)
         return outputs   # list of (B, num_classes, T), one per stage
 
 
