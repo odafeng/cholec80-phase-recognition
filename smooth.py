@@ -61,6 +61,22 @@ def smooth_labels(probs, gamma=0.5, conf_floor=0.4):
     return online_uncertainty_smooth(probs, gamma, conf_floor).argmax(axis=1)
 
 
+def causal_mode_filter(labels, window=15):
+    """Standard online post-processor: causal sliding-window MODE (majority vote
+    over the last `window` frames). This is the dumb, established baseline a
+    reviewer demands we beat -- if our confidence smoothing can't dominate this on
+    the over-seg/latency frontier, then the 'smoothing' is not a contribution.
+    Strictly causal (only past frames). Returns hard labels (T,)."""
+    labels = np.asarray(labels)
+    T = labels.shape[0]
+    out = np.empty(T, dtype=labels.dtype)
+    for t in range(T):
+        lo = max(0, t - window + 1)
+        vals, cnt = np.unique(labels[lo:t + 1], return_counts=True)
+        out[t] = vals[cnt.argmax()]
+    return out
+
+
 def boundary_gated_smooth(probs, bprob, gamma=0.5, conf_floor=0.4, beta=1.0):
     """Boundary-GATED causal smoothing -- gives the boundary head a real inference
     job (the BUA component used at test time, not just an aux training loss).
