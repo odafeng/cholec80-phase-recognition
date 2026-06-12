@@ -55,6 +55,9 @@ def compare(baseline, bua, metrics=None):
             u = u.mean(0)
         n = min(len(b), len(u))
         b, u = b[:n], u[:n]
+        keep = ~(np.isnan(b) | np.isnan(u))        # drop degenerate (NaN) video pairs
+        b, u = b[keep], u[keep]
+        n = len(b)
         lower = k in LOWER_IS_BETTER
         delta = u - b                                  # bua - baseline
         improve = -delta if lower else delta           # positive == improvement
