@@ -73,23 +73,37 @@ def compare(baseline, bua, metrics=None):
             "wins": wins, "n": n, "p": float(p), "lower_is_better": lower,
             "significant": bool(p < 0.05),
         })
+    # Holm-Bonferroni family-wise correction across the metric family (~15 tests):
+    # report adjusted p so significance survives multiple comparisons.
+    order = sorted(range(len(rows)), key=lambda i: rows[i]["p"])
+    m = len(rows)
+    prev = 0.0
+    for rank, i in enumerate(order):
+        adj = min(1.0, (m - rank) * rows[i]["p"])
+        adj = max(adj, prev)                       # enforce monotonicity
+        prev = adj
+        rows[i]["p_holm"] = float(adj)
+        rows[i]["significant_holm"] = bool(adj < 0.05)
     return rows
 
 
 def print_table(rows):
     print(f"\n{'metric':<22}{'baseline':>10}{'+BUA':>10}{'delta':>9}"
-          f"{'wins':>7}{'p':>9}  verdict")
-    print("-" * 80)
+          f"{'wins':>7}{'p':>9}{'p_holm':>9}  verdict")
+    print("-" * 92)
     for r in rows:
         arrow = "v" if r["lower_is_better"] else "^"
         verdict = ""
-        if r["significant"]:
+        if r.get("significant_holm"):
             verdict = "SIG +" if r["improved"] else "SIG -(worse)"
+        elif r["significant"]:
+            verdict = "(raw only)" + (" +" if r["improved"] else " -worse")
         print(f"{r['metric']:<22}{r['baseline']:>10.3f}{r['bua']:>10.3f}"
-              f"{r['delta']:>+9.3f}{r['wins']:>5}/{r['n']:<2}{r['p']:>9.4f}  "
-              f"{arrow} {verdict}")
-    print("-" * 80)
-    print("  ^ higher-is-better   v lower-is-better   SIG = paired Wilcoxon p<0.05")
+              f"{r['delta']:>+9.3f}{r['wins']:>5}/{r['n']:<2}{r['p']:>9.4f}"
+              f"{r.get('p_holm', float('nan')):>9.4f}  {arrow} {verdict}")
+    print("-" * 92)
+    print("  ^ higher-is-better  v lower-is-better  SIG = Holm-adjusted p<0.05  "
+          "(raw only = nominal p<0.05 but not after correction)")
 
 
 def main():

@@ -48,10 +48,12 @@ class CausalConvModule(nn.Module):
         self.pw1 = nn.Conv1d(d, 2 * d, 1)          # pointwise -> GLU gate
         self.dw = nn.Conv1d(d, d, kernel, groups=d,
                             padding=0 if causal else self.pad)
-        # GroupNorm (not BatchNorm): we train with batch_size=1 (one video at a
-        # time), where BatchNorm's running stats are unstable and wreck the
-        # train/test consistency. GroupNorm is batch-independent.
-        self.bn = nn.GroupNorm(8, d)
+        # Per-FRAME channel LayerNorm (NOT GroupNorm). GroupNorm over (B,d,T)
+        # normalises across the whole T axis -> for a causal model the stats at
+        # frame t would depend on FUTURE frames, silently breaking the online
+        # guarantee. A LayerNorm over the channel dim normalises each frame
+        # independently: batch-independent AND strictly causal (no temporal mix).
+        self.cnorm = nn.LayerNorm(d)
         self.pw2 = nn.Conv1d(d, d, 1)
         self.drop = nn.Dropout(dropout)
 
@@ -62,7 +64,7 @@ class CausalConvModule(nn.Module):
         if self.causal:
             h = F.pad(h, (self.pad, 0))            # left-only pad -> causal
         h = self.dw(h)
-        h = F.silu(self.bn(h))
+        h = F.silu(self.cnorm(h.transpose(1, 2)).transpose(1, 2))  # per-frame norm
         h = self.pw2(h)
         h = self.drop(h).transpose(1, 2)           # (B, T, d)
         return res + h

@@ -253,11 +253,25 @@ def transition_latency(pred, gt, stable_k=3):
     latencies = []
     missed = 0
     false_starts = 0
+    early = 0
     n_trans = 0
+    n_clean = 0
     for idx in range(1, len(g_seg)):
         b, t, e = g_seg[idx]          # phase b starts at frame t, ends at e (excl)
         prev_start = g_seg[idx - 1][1]
         n_trans += 1
+        # false start: pred entered phase b somewhere in the PREVIOUS segment
+        if np.any(pred[prev_start:t] == b):
+            false_starts += 1
+        # "early": already committed to b at the boundary frame (t-1). For such
+        # transitions the model switched BEFORE the GT onset, so a "latency" of 0
+        # would be misleading (it conflates early commitment with prompt detection).
+        # Exclude these from the latency statistic; they are captured as false
+        # starts. Latency is reported only over CLEAN onsets (not already in b).
+        if t > 0 and pred[t - 1] == b:
+            early += 1
+            continue
+        n_clean += 1
         # detection: first frame in [t, e) where pred==b stably for stable_k frames
         detected_at = None
         for tp in range(t, e):
@@ -269,16 +283,15 @@ def transition_latency(pred, gt, stable_k=3):
             missed += 1
         else:
             latencies.append(detected_at - t)
-        # false start: pred shows b somewhere in the previous segment [prev_start, t)
-        if np.any(pred[prev_start:t] == b):
-            false_starts += 1
     lat = np.asarray(latencies, dtype=float)
     return {
         "latencies": latencies,
         "median_latency": float(np.median(lat)) if lat.size else float("nan"),
         "mean_latency": float(lat.mean()) if lat.size else float("nan"),
-        "miss_rate": float(missed / n_trans) if n_trans else 0.0,
+        "miss_rate": float(missed / n_clean) if n_clean else 0.0,
         "false_start_count": int(false_starts),
+        "early_count": int(early),
+        "n_clean": int(n_clean),
         "n_transitions": int(n_trans),
     }
 
@@ -290,8 +303,10 @@ def _ece_from_conf(conf, correct, bins=15):
     """Expected & Maximum Calibration Error from confidences + correctness."""
     conf = np.asarray(conf, dtype=float)
     correct = np.asarray(correct, dtype=float)
-    if conf.size == 0:
-        return 0.0, 0.0, []
+    if conf.size < bins:
+        # too few samples for a meaningful ECE -> NaN so np.nanmean excludes it
+        # (a degenerate region must NOT be counted as perfectly calibrated, 0.0).
+        return float("nan"), float("nan"), []
     edges = np.linspace(0.0, 1.0, bins + 1)
     ece = 0.0
     mce = 0.0

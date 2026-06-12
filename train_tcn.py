@@ -175,8 +175,10 @@ def main():
     order = list(range(len(train_data)))
     for ep in range(1, args.epochs + 1):
         model.train()
-        # simple shuffle without RNG seed dependence
-        order = order[1:] + order[:1]
+        # real seed-dependent shuffle (set_seed(args.seed) seeds `random`), so the
+        # 5 seeds differ in data ORDER too -> genuine ensemble diversity, not just
+        # init/dropout noise.
+        random.shuffle(order)
         ep_loss = 0.0
         for j in order:
             feats, labels = train_data[j]

@@ -1,11 +1,11 @@
 """Operating-point sweep for the uncertainty-aware smoothing (BUA).
 
-The smoothing is a TEST-TIME knob (no retraining). For a trained checkpoint we run
-the model ONCE per test video to get calibrated probabilities, then sweep
-(gamma, conf_floor) purely in numpy to trace the accuracy / over-segmentation /
-boundary-ECE trade-off. Finds the operating point that keeps accuracy non-inferior
-while still suppressing over-segmentation -- this is what recovers accuracy on weak
-backbones (e.g. EndoViT-pretrained) and yields the paper's trade-off curve.
+The smoothing is a deploy-time knob (no retraining). We run the model ONCE per
+VAL video to get calibrated probabilities, then sweep (gamma, conf_floor) purely in
+numpy to trace the accuracy / over-segmentation / boundary-ECE trade-off. The
+operating point is SELECTED on val and then applied unchanged on test -- so the
+knob is never tuned on the test set. This recovers accuracy on weak backbones
+(e.g. EndoViT-pretrained) and yields the paper's trade-off curve.
 
 Runs on CPU by default (tiny temporal head) so it doesn't disturb GPU training.
 
@@ -24,7 +24,7 @@ from evaluate import build_from_ckpt, _load_temperature
 from train_tcn import load_features
 from smooth import online_uncertainty_smooth
 from metrics import accuracy, over_segmentation, calibration
-from splits import TEST_IDS
+from splits import VAL_IDS   # operating point is chosen on VAL, never test
 
 GAMMAS = [0.0, 0.2, 0.3, 0.5, 0.7, 1.0]
 FLOORS = [0.3, 0.4, 0.5]
@@ -36,7 +36,9 @@ def raw_probs(ckpt_path, feat_dir):
     ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
     model = build_from_ckpt(ckpt, "cpu")
     T = _load_temperature("auto", ckpt_path) or 1.0
-    ids = [i for i in TEST_IDS if (Path(feat_dir) / f"video{i:02d}.pt").exists()]
+    # VAL set: the smoothing operating point (gamma, conf_floor) is SELECTED here,
+    # then applied unchanged on test -> no test-set hyperparameter tuning.
+    ids = [i for i in VAL_IDS if (Path(feat_dir) / f"video{i:02d}.pt").exists()]
     out = []
     for feats, labels in load_features(Path(feat_dir), ids):
         logits = model(feats)[-1].squeeze(0).t().numpy() / T
