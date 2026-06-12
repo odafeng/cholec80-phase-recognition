@@ -61,6 +61,50 @@ def smooth_labels(probs, gamma=0.5, conf_floor=0.4):
     return online_uncertainty_smooth(probs, gamma, conf_floor).argmax(axis=1)
 
 
+def boundary_gated_smooth(probs, bprob, gamma=0.5, conf_floor=0.4, beta=1.0):
+    """Boundary-GATED causal smoothing -- gives the boundary head a real inference
+    job (the BUA component used at test time, not just an aux training loss).
+
+    Key idea: a frame should be allowed to move the running estimate if it is
+    EITHER confident OR at a predicted phase boundary. So we OPEN the gate with the
+    max of the confidence gate and the predicted boundary probability:
+        g_t = gamma * max( conf_gate_t , beta * b_t )
+    - INTERIOR flicker = momentary low confidence with LOW boundary prob -> both
+      terms small -> heavy smoothing -> over-segmentation suppressed.
+    - REAL transition = low confidence but HIGH boundary prob -> gate opens via b_t
+      -> the model switches phase PROMPTLY despite low confidence -> low latency.
+    This separates "uncertain because flickering" from "uncertain because the phase
+    is actually changing" -- something plain confidence smoothing cannot do, so it
+    can cut over-segmentation AND latency together. Strictly causal (b_t from the
+    causal boundary head; s_t depends only on frames <= t).
+
+    Args:
+        probs: (T, C) calibrated per-frame probabilities.
+        bprob: (T,) predicted boundary probability (sigmoid of the boundary head).
+        gamma, conf_floor: as in online_uncertainty_smooth.
+        beta: how strongly a predicted boundary opens the gate (1.0 = fully).
+    """
+    probs = np.asarray(probs, dtype=float)
+    bprob = np.asarray(bprob, dtype=float).reshape(-1)
+    T, C = probs.shape
+    if T == 0:
+        return probs.copy()
+    denom = max(1e-8, 1.0 - conf_floor)
+    out = np.empty_like(probs)
+    s = probs[0].copy()
+    out[0] = s
+    for t in range(1, T):
+        conf = probs[t].max()
+        conf_gate = np.clip((conf - conf_floor) / denom, 0.0, 1.0)
+        gate = max(conf_gate, beta * np.clip(bprob[t], 0.0, 1.0))
+        g = gamma * min(gate, 1.0)
+        s = (1.0 - g) * s + g * probs[t]
+        out[t] = s
+    out = np.clip(out, 0.0, None)
+    out /= out.sum(axis=1, keepdims=True)
+    return out
+
+
 # --------------------------------------------------------------------------- #
 # self-test
 # --------------------------------------------------------------------------- #
