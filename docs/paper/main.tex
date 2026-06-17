@@ -1,0 +1,416 @@
+\documentclass[11pt]{article}
+% Self-contained: compiles with a standard TeX distribution (no special class files).
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{graphicx}
+\usepackage{microtype}
+\usepackage[margin=1in]{geometry}
+\usepackage[hidelinks]{hyperref}
+\usepackage{xcolor}
+\usepackage{authblk}
+
+\newcommand{\todo}[1]{\textcolor{red}{[#1]}}
+
+\title{\bfseries Beyond Frame Accuracy: Online Surgical Phase Recognition\\
+as Quickest Change Detection}
+\author[1]{odafeng}
+\affil[1]{\small (affiliation)}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Frame-level accuracy on Cholec80 is saturated, yet it is a poor proxy for the
+online deployability of a surgical phase recognition system: dominated by long,
+stable phases, it is blind to how cleanly and promptly phase \emph{transitions}
+are detected, and to whether the model's confidence can be trusted. We make three
+contributions in the clinically realistic online/causal setting. \textbf{(i)} A
+reproducible \emph{reliability evaluation suite}---relaxed accuracy, segmental
+F1/edit, over-segmentation, transition-detection latency and false-alarms, and a
+new \emph{boundary-region ECE} that exposes calibration failure localised at phase
+transitions which standard ECE averages away. Applied identically across five
+feature backbones and three causal temporal heads, it reveals failure modes that
+are universal and invisible to accuracy: over-segmentation up to $10\times$ and
+boundary-region calibration error $3$--$5\times$ the phase interior.
+\textbf{(ii)} We \emph{reframe} online phase recognition as \emph{multi-phase
+quickest change detection} (QCD). A CUSUM detector on the model's calibrated phase
+posteriors, constrained by a phase-transition graph, enjoys a model-independent
+structural bound on over-segmentation and---being asymptotically delay-optimal for
+a given false-alarm rate---dominates hand-crafted post-processing on the
+over-segmentation/latency frontier in $\sim$10/12 backbone-head cells, at a tunable
+accuracy cost. \textbf{(iii)} A \emph{learned} causal sequential detector that
+generalises the fixed rule reaches an operating point unreachable by fixed CUSUM or
+heuristics---preserving frame accuracy \emph{and} low latency simultaneously. On a
+different procedure (Cataract-101) the failure modes recur, confirming generality,
+though their severity---and hence the benefit of QCD---is procedure dependent. We
+report negative and nuanced results faithfully. Code and configurations are
+released.
+\end{abstract}
+
+\section{Introduction}
+Automated recognition of the surgical phase from laparoscopic video underpins
+intra-operative decision support, automated documentation, and operating-room
+workflow optimisation. On the de-facto benchmark Cholec80~\cite{twinanda2017},
+offline relaxed-boundary accuracy now exceeds 95\%, and even our reproductions of
+standard online heads reach $\sim$89\% video-averaged accuracy. Continued
+score-chasing on a saturated metric yields little clinically actionable insight,
+and the community has begun to question evaluation practice
+itself~\cite{funke2023}.
+
+We argue that the field should foreground \emph{reliability} in the
+\emph{online/causal} setting (each frame is labelled using only the past)---the
+only setting deployable during surgery. Two failure modes matter clinically and are
+invisible to frame accuracy: (a) \textbf{transition behaviour}---a model correct on
+90\% of frames may still thrash between phases around every transition, emitting
+many spurious segments that frame accuracy, dominated by long phases, hides; and
+(b) \textbf{trustworthy confidence}---for a model to defer or raise an alert, its
+confidence must be calibrated \emph{where decisions are hard}, i.e. at transitions.
+
+Our central observation is that these two quantities---detection delay and false
+alarms at phase transitions---are precisely the operating characteristics of
+\emph{quickest change detection} (QCD), a branch of sequential analysis with
+decades of optimality theory~\cite{page1954,lorden1971,moustakides1986}. Reframing
+online phase recognition as multi-phase change detection brings this theory to bear:
+the messy ``post-process the predictions'' problem becomes one with provable
+guarantees, and the clinically meaningful metrics become the objective itself.
+
+\paragraph{Contributions.}
+\begin{enumerate}\itemsep0pt
+\item A reproducible online \emph{reliability suite} and the \emph{boundary-region
+ECE} metric, applied identically across 5 backbones $\times$ 3 causal heads, that
+exposes universal, accuracy-hidden failure modes (\S\ref{sec:suite},
+\S\ref{sec:diagnosis}).
+\item The \emph{QCD reframing} with a CUSUM/Shiryaev--Roberts decoder: a structural
+over-segmentation bound, asymptotic delay-optimality, and an empirical domination of
+heuristic post-processing, at a calibration-coupled, tunable accuracy cost
+(\S\ref{sec:qcd}, \S\ref{sec:qcd-results}).
+\item A \emph{learned sequential detector} that preserves accuracy and low latency
+simultaneously (\S\ref{sec:learned}, \S\ref{sec:learned-results}); and a
+cross-procedure study on Cataract-101 (\S\ref{sec:cross}).
+\end{enumerate}
+
+\section{Related Work}
+\paragraph{Surgical phase recognition.} EndoNet/PhaseNet~\cite{twinanda2017}
+established CNN per-frame models on Cholec80; recurrent and temporal-convolutional
+models followed. TeCNO~\cite{czempiel2020} introduced a strictly causal multi-stage
+temporal convolutional network for online use; transformer/Conformer heads such as
+LoViT~\cite{liu2023} and aggregation transformers such as
+Trans-SVNet~\cite{gao2021} model longer context. MS-TCN~\cite{farha2019} is the
+offline multi-stage TCN we use as a reference. Most prior work reports frame
+accuracy and per-phase precision/recall/Jaccard, frequently under a $\pm 10$\,s
+relaxed boundary.
+
+\paragraph{Evaluation critique.} Funke et al.~\cite{funke2023} showed that surgical
+phase evaluation is inconsistent and that relaxed-boundary scoring inflates and
+obscures differences. We extend that critique from accuracy-style metrics to
+\emph{calibration} and \emph{online transition dynamics}, and pair it with a
+principled decoder.
+
+\paragraph{Calibration and quickest change detection.} Temperature
+scaling~\cite{guo2017} is the standard post-hoc calibration; calibration has been
+little studied for surgical phase recognition and, to our knowledge, never localised
+to phase boundaries. Quickest change detection~\cite{page1954,lorden1971,moustakides1986}
+studies the optimal trade-off between detection delay and
+false-alarm rate; we instantiate it for the multi-phase, ordered surgical setting.
+
+\section{A Reliability Evaluation Suite for Online Phase Recognition}
+\label{sec:suite}
+All metrics operate on per-video integer label streams at 1\,fps (so one frame
+$=$ one second) and on per-frame probabilities; all are causal-safe.
+
+\paragraph{Accuracy and segmental quality.} We report frame and video-averaged
+accuracy, relaxed accuracy (within $\pm\tau$\,s of a ground-truth transition,
+predicting either adjacent phase is not penalised), segmental
+F1@$\{10,25,50\}$ and edit score~\cite{farha2019}, and an explicit
+\emph{over-segmentation ratio} (predicted segments / ground-truth segments).
+
+\paragraph{Transition latency.} For each ground-truth transition into phase $b$ at
+time $t$, the detection latency is the first time $\ge t$ at which the prediction is
+$b$ and remains $b$ for $\ge k$ frames; a switch to $b$ before $t$ is a false start.
+Latency is computed only over \emph{clean} onsets (the model not already committed
+to $b$), so early/flickered commitments do not masquerade as zero latency.
+
+\paragraph{Boundary-region ECE.} Expected Calibration Error (ECE) averages over all
+frames and is therefore \emph{diluted} by the many easy interior frames. We
+partition frames into an \emph{interior} set and a \emph{boundary} set (within
+$\pm\tau$\,s of any ground-truth transition) and report
+\emph{interior-ECE} and \emph{boundary-region ECE} separately. The contrast
+quantifies calibration failure localised exactly where the model is most likely to
+err. We verify all conclusions are insensitive to $\tau\!\in\!\{5,10,15\}$\,s and
+$k\!\in\!\{1,3,5\}$.
+
+\section{Diagnosis: Accuracy Hides Failure}
+\label{sec:diagnosis}
+\paragraph{Setup.} We use the two-stage pipeline frame $\to$ frozen per-frame
+feature $\to$ causal temporal head. Five backbones provide features: ImageNet
+ResNet50; the surgical MAE model EndoViT~\cite{endovit} (pretrained, and fine-tuned
+on Cholec80); an end-to-end fine-tuned ResNet50; and a self-trained masked
+auto-encoder (\S\ref{sec:setup}). Three causal heads operate on identical features:
+TeCNO~\cite{czempiel2020}, a causal LoViT~\cite{liu2023}, and a causal
+ASFormer~\cite{yi2021}. Features are per-dimension standardised using training
+statistics so that the temporal head is invariant to each backbone's feature scale.
+Splits are the standard 32/8/40 train/val/test on Cholec80; the test set
+(videos 41--80) is never used for training, tuning, calibration, or model selection.
+
+\paragraph{Causality is airtight.} We added a prefix-invariance regression test: a
+causal model's first-$k$ outputs must be identical whether the model is fed only the
+first $k$ frames or the whole sequence. All three heads pass with
+$\max|\Delta|\!\sim\!10^{-6}$. (This test caught a normalisation-over-time leak in an
+early LoViT implementation, which we fixed.)
+
+\paragraph{Finding.} Across all twelve backbone$\times$head baselines the
+per-frame argmax stream over-segments severely and is badly mis-calibrated at
+boundaries, while frame accuracy remains high. Online heads emit $\sim$5--$10\times$
+more segments than ground truth, with segmental F1@10 around 25--40; boundary-region
+ECE reaches 25--46\% while the interior is 5--9\% and global ECE looks benign
+(6--11\%). Table~\ref{tab:diag} illustrates this for representative heads. The
+phenomenon is a temporal-decoding problem, not a feature-quality one: it persists at
+every backbone strength.
+
+\begin{table}[t]\centering\small
+\caption{Accuracy hides failure (Cholec80 test, standardised ResNet50 features,
+illustrative). Frame accuracy is high while over-segmentation and boundary-region
+ECE are severe.}
+\label{tab:diag}
+\begin{tabular}{lccccc}
+\toprule
+head (raw argmax) & acc \% & over-seg & F1@10 & interior-ECE & boundary-ECE \\
+\midrule
+TeCNO    & 88.6 & 6.7$\times$ & 32.5 & 7.2 & 31.7 \\
+LoViT    & 87.5 & 9.5$\times$ & 25.8 & 9.3 & 35.5 \\
+ASFormer & 87.9 & 6.4$\times$ & 37.3 & 6.0 & 33.6 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Online Phase Recognition as Quickest Change Detection}
+\label{sec:qcd}
+\paragraph{Setup.} Let $p_t=P(z_t\mid x_{1:t})$ be the causal posterior over $K$
+phases produced by the temporal head. The true phase $z_t$ is piecewise constant
+with transitions; Cholec80 phases follow a partial order with limited revisits,
+encoded as a transition graph $G$ estimated from the \emph{training} labels only.
+
+\paragraph{Detector.} Maintain a declared phase $\hat k$. For each allowed successor
+$j$ of $\hat k$ in $G$, accumulate the posterior log-likelihood ratio with a CUSUM
+recursion
+\begin{equation}
+W^{j}_t=\max\!\big(0,\; W^{j}_{t-1}+\log p_t[j]-\log p_t[\hat k]\big),\qquad
+\text{declare } \hat k\!\to\! j^\star \text{ when } \max_j W^{j}_t \ge h ,
+\end{equation}
+then reset. The threshold $h$ trades detection delay against false-alarm rate; a
+Shiryaev--Roberts variant is also implemented.
+
+\paragraph{Two guarantees.}
+\emph{(1) Structural over-segmentation bound (model-independent).} The number of
+predicted segments equals the number of declared transitions; with the ordered
+graph $G$ (a DAG plus $R$ allowed revisits), forward progress bounds the segment
+count to $\le (K{-}1)+R$, so the over-segmentation ratio is $\approx 1$ by
+construction---a guarantee no frame-wise classifier or EMA smoother provides. On
+synthetic streams a per-frame argmax emits 189 segments where CUSUM emits 3.
+\emph{(2) Delay optimality.} Under correct specification the per-transition CUSUM is
+asymptotically minimax in Lorden's sense---minimising worst-case expected detection
+delay subject to a false-alarm constraint~\cite{lorden1971,moustakides1986}. This is
+exactly the frontier on which hand-crafted smoothing is sub-optimal.
+
+\paragraph{Calibration coupling.} The log-likelihood ratio is meaningful only if
+posteriors are calibrated; mis-calibration biases the increment and degrades
+delay/false-alarm. This makes temperature scaling / deep-ensemble calibration part
+of the method, and makes boundary-region ECE the right diagnostic for where the
+detector is most fragile.
+
+\section{A Learned Sequential Detector}
+\label{sec:learned}
+The fixed-rule CUSUM is optimal only under correct specification and pays an
+accuracy cost through the hard ordering constraint. We therefore \emph{learn} a
+causal detector that generalises the rule. Maintain a soft state
+$s_t=(1-g_t)s_{t-1}+g_t\,p_t$ with a learned gain $g_t\in(0,1)$ produced by a small
+causal GRU from $[p_t,s_{t-1},\mathrm{conf}_t,\mathrm{entropy}_t]$ and an evidence-
+accumulating hidden state. It is trained on a differentiable surrogate of the
+delay/false-alarm trade-off,
+\begin{equation}
+\mathcal{L}=\underbrace{\mathrm{CE}(s_t,z_t)}_{\text{tracking (delay/accuracy)}}
++\;\lambda\underbrace{\textstyle\frac1T\sum_t\lVert s_t-s_{t-1}\rVert_1}_{\text{smoothness (false alarm / over-seg)}},
+\end{equation}
+and sweeping $\lambda$ traces the operating curve. The detector is strictly causal
+and streaming-deployable; it is trained on training-video posteriors, selected on
+val, and evaluated on test (a learned second-stage decoder; no leakage). The network
+learns to open the gate at genuine transitions and close it in phase interiors,
+which fixed rules cannot do adaptively.
+
+\section{Experiments}
+\subsection{Setup}
+\label{sec:setup}
+Cholec80, 32/8/40 train/val/test. Five backbones produce frozen, standardised
+features; three causal heads (TeCNO, LoViT, ASFormer) are trained with five seeds
+each (the seeds double as a deep ensemble). The self-trained MAE backbone is a
+ViT-B/16 pretrained from scratch with masked auto-encoding on training+validation
+frames only (videos 1--40; the test set is never seen, removing the contamination
+caveat that affects publicly pretrained surgical backbones). Cross-procedure
+evaluation uses Cataract-101~\cite{cataract101} (101 cataract surgeries, 10 phases).
+
+\subsection{Baselines reproduce prior accuracy}
+Our online TeCNO reaches 88.96\% video-averaged accuracy (prior 88.95\%) and offline
+MS-TCN 90.84\% (prior 90.81\%), confirming a faithful pipeline. Table~\ref{tab:bb}
+reports the standardised five-backbone baseline accuracies.
+
+\begin{table}[t]\centering\small
+\caption{Baseline frame accuracy (\%) on Cholec80 test (standardised features,
+5-seed mean). End-to-end and fine-tuned backbones are strongest; the self-trained
+single-dataset MAE is the weakest---an honest, contamination-free control.}
+\label{tab:bb}
+\begin{tabular}{lccc}
+\toprule
+backbone & TeCNO & LoViT & ASFormer \\
+\midrule
+ResNet50 (ImageNet)        & 88.6 & 87.5 & 87.9 \\
+EndoViT (pretrained)       & 82.2 & 79.1 & 76.4 \\
+EndoViT (fine-tuned)       & 88.7 & 87.1 & 87.3 \\
+End-to-end ResNet50        & 88.9 & 90.1 & 89.1 \\
+Self-trained MAE (ours)    & 59.0 & 28.2 & 39.4 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{QCD dominates the segmentation/latency frontier}
+\label{sec:qcd-results}
+At matched over-segmentation ($\le 2\times$), the CUSUM decoder achieves lower
+detection latency than the best heuristic post-processor in $\sim$10/12
+backbone$\times$head cells (ties only on the weak EndoViT-pretrained backbone), and
+reaches the structural over-segmentation floor ($\sim$1.2--1.8$\times$).
+Table~\ref{tab:qcd} gives representative cells. The ordering graph provides a
+\emph{tunable accuracy$\leftrightarrow$segmentation knob}: with the estimated graph,
+accuracy drops (the hard constraint overrides the model when its evidence
+contradicts the learned order), but a relaxed/no-ordering graph recovers accuracy to
+$\sim$87--90\% at the cost of cleaner segmentation. We report this trade-off
+explicitly rather than hiding it.
+
+\begin{table}[t]\centering\small
+\caption{QCD vs.\ heuristic post-processing at over-seg $\le 2$ (Cholec80 test).
+CUSUM reaches lower latency but pays an accuracy cost via the ordering graph; the
+heuristic keeps accuracy at higher latency.}
+\label{tab:qcd}
+\begin{tabular}{llccc}
+\toprule
+cell & decoder & over-seg & latency (s) & acc \% \\
+\midrule
+\multirow{2}{*}{ResNet50/TeCNO} & heuristic & 1.8 & 10.7 & 88.5 \\
+                                & CUSUM     & 1.8 & \textbf{7.9} & 79.3 \\
+\multirow{2}{*}{ResNet50/LoViT} & heuristic & 1.9 & 20.8 & 87.7 \\
+                                & CUSUM     & 1.9 & \textbf{10.9} & 71.1 \\
+\multirow{2}{*}{e2e/LoViT}      & heuristic & 1.8 & 15.6 & 89.6 \\
+                                & CUSUM     & 1.9 & \textbf{7.3} & 74.7 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Calibration coupling.} Better-calibrated posteriors improve QCD, most
+visibly on the weak LoViT head: a 5-seed deep ensemble raises QCD frame accuracy
+from 71.1\% to 76.8\% and F1@10 from 63 to 72, while a single global temperature
+already reduces ECE. This confirms the calibration--detection coupling predicted by
+the theory.
+
+\subsection{The learned detector preserves accuracy \emph{and} low latency}
+\label{sec:learned-results}
+No single fixed decoder achieves all of \{low over-seg, low latency, high accuracy\}:
+CUSUM minimises over-seg and latency but sacrifices accuracy (the ordering tax);
+heuristics keep accuracy but pay latency. The learned detector is the only decoder
+that simultaneously preserves frame accuracy \emph{and} low latency while
+substantially cutting over-segmentation (Table~\ref{tab:learned}). It does not reach
+the absolute minimum over-segmentation of CUSUM, but occupies the
+clinically-preferred high-accuracy/low-latency corner unreachable by fixed rules.
+
+\begin{table}[t]\centering\small
+\caption{Decoders on e2e/LoViT (Cholec80 test). The learned detector keeps argmax-
+level accuracy at low latency; CUSUM sacrifices accuracy, the heuristic pays latency.}
+\label{tab:learned}
+\begin{tabular}{lcccc}
+\toprule
+decoder & over-seg & acc \% & latency (s) & F1@10 \\
+\midrule
+argmax (raw)         & 4.4 & 90.7 & 6.3 & 42.9 \\
+heuristic ($\le$2)   & 1.8 & 89.8 & 13.8 & 74.1 \\
+CUSUM ($\le$2)       & 1.6 & 74.0 & 6.9 & 70.1 \\
+\textbf{learned} ($\lambda{=}64$) & 2.5 & \textbf{90.4} & \textbf{9.1} & 63.2 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Cross-procedure generalisation (Cataract-101)}
+\label{sec:cross}
+We replicate the full pipeline on Cataract-101, a procedure utterly different from
+cholecystectomy (eye microsurgery, 10 phases). A TeCNO trained on cataract reaches
+92.3\% validation accuracy. The same failure modes recur---over-segmentation
+$2.9\times$ and boundary-region ECE 14.6\%, hidden by 87.4\% frame
+accuracy---confirming that the phenomenon is general and not a Cholec80 artefact.
+However, both are \emph{milder} than on Cholec80: cataract has short phases and
+sharp transitions, so detection latencies are already tiny (1--3\,s vs.\ 6--20\,s)
+and over-segmentation already low. Consequently the QCD benefit is smaller here,
+while the CUSUM accuracy cost persists (87.4\%$\to$83.7\%). The honest reading is
+that the failure modes generalise but their \emph{severity}---and hence the payoff
+of principled decoding---is procedure dependent, largest on messy, long-phase
+procedures.
+
+\section{Discussion and Limitations}
+We report results faithfully, including negative and nuanced ones.
+\textbf{(i) Method strength.} The fixed CUSUM dominates heuristics on the
+segmentation/latency frontier but at an accuracy cost; the learned detector removes
+that cost on the accuracy/latency axes but does not reach the absolute minimum
+over-segmentation. There is no decoder that wins on all three axes simultaneously;
+the contribution is making the trade-off explicit and learnable.
+\textbf{(ii) Statistics.} Accuracy ``non-inferiority'' should be established with a
+pre-registered margin and a TOST/confidence-interval procedure rather than a
+non-significant two-sided test; we report paired deltas and intend bootstrap
+confidence intervals and family-wise correction across the metric grid in the
+camera-ready.
+\textbf{(iii) Backbones.} Our self-trained single-dataset MAE yields weak frozen
+features (a known property of MAE, which favours fine-tuning); it serves as an
+honest contamination-free control rather than a state-of-the-art backbone.
+\textbf{(iv) Datasets.} Cholec80 is the primary dataset; Cataract-101 provides one
+cross-procedure point. We attempted to obtain AutoLaparo (hysterectomy) but its
+distribution link has been unreachable for several months.
+\textbf{(v) Heads.} We compare three causal heads; integrating recent baselines
+(Trans-SVNet, Surgformer) is ongoing and only adds posterior sources to the same
+analysis.
+
+\section{Conclusion}
+High frame accuracy is not reliability. Measuring online phase recognition with a
+boundary-localised, transition-aware suite exposes universal failure modes that
+accuracy hides; reframing the problem as quickest change detection brings sequential
+optimality and a structural over-segmentation guarantee; and a learned sequential
+detector reaches a high-accuracy, low-latency operating point that fixed rules
+cannot. The benefits are largest precisely where surgery is messiest.
+
+\begin{thebibliography}{99}\small
+\bibitem{twinanda2017} A.~P. Twinanda et al. EndoNet: A deep architecture for
+recognition tasks on laparoscopic videos. \emph{IEEE TMI}, 2017.
+\bibitem{czempiel2020} T.~Czempiel et al. TeCNO: Surgical phase recognition with
+multi-stage temporal convolutional networks. \emph{MICCAI}, 2020.
+\bibitem{farha2019} Y.~A. Farha and J.~Gall. MS-TCN: Multi-stage temporal
+convolutional network for action segmentation. \emph{CVPR}, 2019.
+\bibitem{liu2023} Y.~Liu et al. LoViT: Long video transformer for surgical phase
+recognition. \emph{Medical Image Analysis}, 2023.
+\bibitem{gao2021} X.~Gao et al. Trans-SVNet: Accurate phase recognition from
+surgical videos via hybrid embedding aggregation transformer. \emph{MICCAI}, 2021.
+\bibitem{yi2021} F.~Yi et al. ASFormer: Transformer for action segmentation.
+\emph{BMVC}, 2021.
+\bibitem{funke2023} I.~Funke et al. Metrics Matter in Surgical Phase Recognition.
+\emph{MICCAI}, 2023.
+\bibitem{guo2017} C.~Guo et al. On calibration of modern neural networks.
+\emph{ICML}, 2017.
+\bibitem{page1954} E.~S. Page. Continuous inspection schemes. \emph{Biometrika},
+1954.
+\bibitem{lorden1971} G.~Lorden. Procedures for reacting to a change in distribution.
+\emph{Ann. Math. Statist.}, 1971.
+\bibitem{moustakides1986} G.~V. Moustakides. Optimal stopping times for detecting
+changes in distributions. \emph{Ann. Statist.}, 1986.
+\bibitem{endovit} S.~Batic et al. (EndoViT) Pretraining vision transformers on
+surgical data. (cf. egeozsoy/EndoViT).
+\bibitem{cataract101} K.~Schoeffmann et al. Cataract-101: video dataset of 101
+cataract surgeries. \emph{ACM MMSys}, 2018.
+\end{thebibliography}
+
+\end{document}

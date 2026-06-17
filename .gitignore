@@ -40,3 +40,7 @@ results/
 *.npz
 *.temp.json
 docs/figures/
+tectonic
+docs/paper/main.pdf
+docs/paper/*.aux
+docs/paper/*.log
