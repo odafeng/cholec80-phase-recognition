@@ -63,3 +63,19 @@ A 5th backbone (self-trained surgical MAE) is pretraining and will be added.
 - p-values are Holm-corrected across the ~15-metric family.
 - Smoothing operating point selected on val, never test.
 - Self-trained MAE backbone (videos 1–40 only) will add a 5th, contamination-free row.
+
+## Corrected statistics (P4, `stats_corrected.py` → `results/stats_corrected.json`)
+Per-(video, seed) analysis, no seed pre-averaging; cluster-bootstrap 95% CIs over the
+40 test videos; paired Wilcoxon Holm-corrected across the metric family; TOST
+non-inferiority (1% margin).
+- **Boundary-region ECE vs interior (headline metric):** 0.314 vs 0.073 →
+  **4.32× [3.73, 5.12]**, Wilcoxon **p=2.8e-21** (n=120 video×head units). The
+  boundary-localised mis-calibration is real and not an averaging artefact.
+- **Baseline (argmax) pooled (5 bb × 3 heads × 5 seeds):** acc 0.773 [0.747, 0.800],
+  over-seg 6.2× [5.1, 7.7], F1@10 32.3 [28.9, 35.8], median latency 25.6 s.
+- **BUA heuristic vs baseline (Holm):** significant ↑ on F1@10 (+19.6), edit (+17.6),
+  over-seg (+3.3×), accuracy (+0.011), false-starts; **latency NOT significant**
+  (Δ=−0.3 s, p_holm=0.90) — the axis QCD targets. TOST: accuracy non-inferior
+  (CI_lo +0.5%).
+- **Pending (GPU-blocked behind LLM benchmark):** Trans-SVNet/Surgformer baselines;
+  per-video CIs for QCD frontier operating points (need cached posteriors / re-inference).

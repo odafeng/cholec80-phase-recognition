@@ -167,9 +167,13 @@ per-frame argmax stream over-segments severely and is badly mis-calibrated at
 boundaries, while frame accuracy remains high. Online heads emit $\sim$5--$10\times$
 more segments than ground truth, with segmental F1@10 around 25--40; boundary-region
 ECE reaches 25--46\% while the interior is 5--9\% and global ECE looks benign
-(6--11\%). Table~\ref{tab:diag} illustrates this for representative heads. The
-phenomenon is a temporal-decoding problem, not a feature-quality one: it persists at
-every backbone strength.
+(6--11\%). Pooling per-video over the heads, boundary-region ECE is
+$\mathbf{4.3\times}$ the interior (0.314 vs.\ 0.073; cluster-bootstrap ratio CI
+$[3.7,5.1]$; paired Wilcoxon $p<10^{-20}$, $n{=}120$ video$\times$head units),
+confirming that mis-calibration is localised exactly at transitions and is not an
+artefact of averaging. Table~\ref{tab:diag} illustrates this for representative heads.
+The phenomenon is a temporal-decoding problem, not a feature-quality one: it persists
+at every backbone strength.
 
 \begin{table}[t]\centering\small
 \caption{Accuracy hides failure (Cholec80 test, standardised ResNet50 features,
@@ -361,11 +365,18 @@ segmentation/latency frontier but at an accuracy cost; the learned detector remo
 that cost on the accuracy/latency axes but does not reach the absolute minimum
 over-segmentation. There is no decoder that wins on all three axes simultaneously;
 the contribution is making the trade-off explicit and learnable.
-\textbf{(ii) Statistics.} Accuracy ``non-inferiority'' should be established with a
-pre-registered margin and a TOST/confidence-interval procedure rather than a
-non-significant two-sided test; we report paired deltas and intend bootstrap
-confidence intervals and family-wise correction across the metric grid in the
-camera-ready.
+\textbf{(ii) Statistics.} We analyse the data at the per-(video, seed) level without
+pre-averaging seeds, with cluster-bootstrap CIs over the 40 test videos, paired
+Wilcoxon tests Holm-corrected across the metric family, and TOST against a
+pre-registered $1\%$ absolute margin for accuracy non-inferiority. This sharpens the
+v1 motivation: pooled over the grid, heuristic post-processing significantly improves
+F1@10 ($\Delta{=}{+}19.6$), edit ($+17.6$), and over-segmentation ($+3.3\times$), and
+is accuracy-non-inferior (TOST, CI lower bound ${+}0.5\%$), but its effect on
+transition \emph{latency} is \emph{not} significant ($\Delta{=}{-}0.3$\,s, $p{=}0.90$
+Holm) --- precisely the axis on which the principled QCD detector is needed. The
+frontier-dominance comparison is reported as point estimates across the twelve cells;
+per-video CIs for the QCD operating points require re-running the decoders with cached
+posteriors (in progress).
 \textbf{(iii) Backbones.} Our self-trained single-dataset MAE yields weak frozen
 features (a known property of MAE, which favours fine-tuning); it serves as an
 honest contamination-free control rather than a state-of-the-art backbone.
