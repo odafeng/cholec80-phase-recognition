@@ -132,6 +132,37 @@ causality test. Cholec80 TEST (videos 41–80), frame / relaxed accuracy, mean o
   board — a backbone-quality finding, not a head bug. Reported per-backbone, not hidden in
   an average.
 
+## Cross-dataset generalization — Cataract-101 (`cataract_frontier_ci.py`)
+Does the framing transfer to a *different procedure*? Cataract surgery (10 phases, 101
+videos, 60/20/21 split) — utterly unlike laparoscopic cholecystectomy. Causal TeCNO,
+**5 seeds**, per-video cluster-bootstrap over the 21 test videos.
+
+- **The failure modes generalize:** raw-argmax over-seg **2.83×** [2.21, 3.54] and
+  boundary-ECE **13.4%** [10.4, 16.5] — the same "accuracy hides over-segmentation +
+  boundary mis-calibration" pattern as Cholec80, on a totally different surgery.
+
+| decoder | over-seg | latency (s) | accuracy % | seg-F1@10 |
+|---|---|---|---|---|
+| QCD (full graph) | 1.78 [1.5, 2.1] | 0.52 [0.3, 0.8] | 88.6 [84.7, 91.7] | 74.3 [67.2, 80.8] |
+| best heuristic | 1.83 [1.6, 2.1] | 0.73 [0.5, 1.0] | 88.4 [84.6, 91.6] | 73.0 [66.3, 80.0] |
+| QCD (estimated graph) | 1.43 [1.3, 1.6] | 0.80 [0.4, 1.3] | 83.5 [78.9, 87.9] | 77.4 [71.9, 82.8] |
+
+- **QCD-full dominance generalizes (Holm-corrected):** latency **−0.21 s** [−0.28, −0.15],
+  seg-F1 **+1.35** [+0.45, +2.30], accuracy **non-inferior** (+0.22%), over-seg matched
+  — the *same* profile as Cholec80, on a new procedure.
+- **QCD-est** trades accuracy (−4.9%) for tighter segmentation (over-seg 1.43, seg-F1 +4.45)
+  — again the same graph trade-off as Cholec80.
+- **Honest scale note:** absolute latencies are small (~0.5–0.8 s; cataract transitions are
+  sharp, little headroom), but the *relative* QCD-full win is significant. A single-seed run
+  read as a "tie" — that was the estimated-graph CUSUM (latency Δ n.s. here too); the
+  multi-seed CIs reveal QCD-full's clean win. Rigor (5 seeds + CIs) changed the conclusion.
+
+**Cross-dataset takeaway:** both the *problem* (over-seg + hidden boundary mis-calibration)
+and the *principled-detector win* (latency + seg-F1 at non-inferior accuracy, structural
+over-seg bound) transfer to a different procedure → the contribution is general, not
+Cholec80-specific.
+
 - **Pending (GPU-blocked behind LLM benchmark):** ~~per-video CIs for QCD frontier
-  operating points~~ **DONE**; ~~Trans-SVNet/Surgformer baselines~~ **DONE** (above).
-  QCD frontier dominance re-run with all 5 heads in progress (`frontier_ci.py`).
+  operating points~~ **DONE**; ~~Trans-SVNet/Surgformer baselines~~ **DONE**; ~~QCD frontier
+  5-head re-run~~ **DONE** (125 cells, above); ~~cross-dataset Cataract-101~~ **DONE** (above).
+  Remaining for #14: write the QCD paper (P5).
