@@ -10,6 +10,8 @@ import torch
 from mstcn import MultiStageTCN
 from lovit import LoViT
 from asformer import ASFormer
+from transsvnet import TransSVNet
+from surgformer import Surgformer
 
 
 def causal_ok(model, name, T=120, k=60, tol=1e-4):
@@ -30,8 +32,12 @@ def main():
     ok.append(causal_ok(MultiStageTCN(causal=True), "TeCNO"))
     ok.append(causal_ok(LoViT(causal=True), "LoViT"))
     ok.append(causal_ok(ASFormer(causal=True), "ASFormer"))
+    ok.append(causal_ok(TransSVNet(causal=True), "TransSVNet"))
+    ok.append(causal_ok(Surgformer(causal=True), "Surgformer"))
     ok.append(causal_ok(MultiStageTCN(causal=True, boundary=True), "TeCNO+boundary"))
     ok.append(causal_ok(LoViT(causal=True, boundary=True), "LoViT+boundary"))
+    ok.append(causal_ok(TransSVNet(causal=True, boundary=True), "TransSVNet+boundary"))
+    ok.append(causal_ok(Surgformer(causal=True, boundary=True), "Surgformer+boundary"))
     print("ALL CAUSAL" if all(ok) else "*** CAUSALITY VIOLATION ***")
     return all(ok)
 

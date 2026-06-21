@@ -20,6 +20,8 @@ from sklearn.metrics import (precision_score, recall_score, jaccard_score,
 from mstcn import MultiStageTCN
 from lovit import LoViT
 from asformer import ASFormer
+from transsvnet import TransSVNet
+from surgformer import Surgformer
 from phases import NUM_PHASES, PHASES
 from splits import TEST_IDS
 from metrics import evaluate_video
@@ -41,6 +43,14 @@ def build_from_ckpt(ckpt, device):
         model = ASFormer(in_dim=in_dim, num_classes=NUM_PHASES, num_stages=cfg["stages"],
                          num_layers=cfg["layers"], d=cfg["d"], heads=cfg["heads"],
                          causal=cfg["causal"], boundary=boundary).to(device)
+    elif arch == "transsvnet":
+        model = TransSVNet(in_dim=in_dim, num_classes=NUM_PHASES, num_stages=cfg["stages"],
+                           num_layers=cfg["layers"], d=cfg["d"], heads=cfg["heads"],
+                           causal=cfg["causal"], boundary=boundary).to(device)
+    elif arch == "surgformer":
+        model = Surgformer(in_dim=in_dim, num_classes=NUM_PHASES, num_stages=cfg["stages"],
+                           num_layers=cfg["layers"], d=cfg["d"], heads=cfg["heads"],
+                           causal=cfg["causal"], boundary=boundary).to(device)
     else:
         model = MultiStageTCN(cfg["stages"], cfg["layers"], cfg["fmaps"],
                               in_dim=in_dim, num_classes=NUM_PHASES,

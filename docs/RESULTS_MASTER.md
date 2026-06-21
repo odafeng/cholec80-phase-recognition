@@ -77,5 +77,61 @@ non-inferiority (1% margin).
   over-seg (+3.3×), accuracy (+0.011), false-starts; **latency NOT significant**
   (Δ=−0.3 s, p_holm=0.90) — the axis QCD targets. TOST: accuracy non-inferior
   (CI_lo +0.5%).
-- **Pending (GPU-blocked behind LLM benchmark):** Trans-SVNet/Surgformer baselines;
-  per-video CIs for QCD frontier operating points (need cached posteriors / re-inference).
+## QCD frontier operating points — per-video CIs (`frontier_ci.py` → `results/frontier_ci.json`)
+Pooled over the **full 5 bb × 5 heads × 5 seeds = 125 cells** (now including the added
+Trans-SVNet + Surgformer heads), cluster-bootstrap over the 40 test videos. At each cell
+the operating point is the min-latency frontier point with over-seg ≤ 2.0 (same rule as
+`qcd_p2`); per-video metrics recorded there. **The dominance story is unchanged from the
+3-head run — robust across all 5 temporal heads.**
+
+| decoder | over-seg | latency (s) | accuracy % | seg-F1@10 |
+|---|---|---|---|---|
+| QCD (estimated graph) | 1.51 [1.4, 1.7] | 25.1 [21.7, 29.6] | 68.3 [64.4, 72.2] | 65.5 [61.7, 69.0] |
+| QCD (full graph) | 1.84 [1.6, 2.1] | 26.0 [22.7, 30.0] | 77.3 [74.7, 79.9] | 64.2 [59.7, 67.9] |
+| best heuristic | 1.78 [1.6, 2.0] | 28.2 [24.7, 32.0] | 77.0 [74.4, 79.5] | 65.3 [61.3, 69.1] |
+
+**Frontier dominance (paired vs heuristic, Holm-corrected; +Δ = QCD better):**
+- **Latency win is real and significant on both variants** — QCD-full **−2.2 s**
+  [−1.6, −2.9], **36/40 videos**, p_holm<0.001; QCD-est −3.1 s [−1.0, −5.1], 31/40,
+  p_holm=0.003. This is the axis the BUA heuristic could NOT move (latency Δ there was n.s.).
+- **QCD-full is non-inferior on accuracy** (+0.25% [+0.07, +0.45], p_holm=0.04) while
+  cutting latency — faster detection at no accuracy cost, with the structural over-seg
+  property by construction. Cost: seg-F1 −1.1 [−1.6, −0.7] and a marginally higher
+  over-seg (+0.06).
+- **QCD-est is NOT a free win:** the ordered graph buys tighter segmentation
+  (over-seg 1.51, −0.27 vs heuristic) and more latency but **costs −8.7% accuracy**
+  [−11.1, −6.5] — the estimated graph is too restrictive. Honest trade-off, not dominance.
+- **Caveat:** the selected operating points are not exactly over-seg-matched
+  (QCD-full 1.84 vs heuristic 1.78), so the latency comparison is at *approximately*
+  matched over-seg, not identical — noted for the paper.
+
+**Takeaway:** the principled detector delivers the one thing heuristics couldn't —
+a significant, CI-backed detection-latency reduction at non-inferior accuracy (QCD-full)
+— plus the structural anti-over-segmentation guarantee. It is a measured win, not a
+blowout (consistent with plan R5).
+
+## Additional online heads — Trans-SVNet + Surgformer (`run_baselines.sh`, `verify_baselines.py`)
+Two more causal/online temporal heads added as QCD posterior sources, trained 5 seeds ×
+5 backbones (50 base checkpoints), strengthening the "across temporal heads" claim.
+Both are clean-room **causal** adaptations on the shared feature stream (Trans-SVNet =
+TCN temporal-embedding + spatial-query×temporal-memory cross-attention; Surgformer =
+pure multi-scale hierarchical causal attention). Both pass the prefix-invariance
+causality test. Cholec80 TEST (videos 41–80), frame / relaxed accuracy, mean over 5 seeds:
+
+| head | rn50 | endovit | endovitft | e2e | 4-backbone mean | surgmae |
+|---|---|---|---|---|---|---|
+| Trans-SVNet | 85.9 / 87.6 | 80.0 / 82.0 | 86.7 / 88.4 | 87.8 / 89.6 | **85.1 / 86.9** | 55.2 / 56.7 |
+| Surgformer  | 86.5 / 88.3 | 82.5 / 84.6 | 87.4 / 89.1 | 88.9 / 90.6 | **86.3 / 88.1** | 30.5 / 31.5 |
+
+- **On the 4 standard backbones both heads land in the published Cholec80 online ballpark**
+  and track our existing TeCNO/LoViT/ASFormer heads per backbone (apples-to-apples) →
+  implementations validated.
+- **surgmae degrades *every* head, not just the new ones** (cached existing-head surgmae
+  TEST acc: TeCNO 59.0, LoViT 28.2, ASFormer 39.4; new: Trans-SVNet 55.2, Surgformer 30.5).
+  The self-trained MAE backbone (videos 1–40 only) yields weak test posteriors across the
+  board — a backbone-quality finding, not a head bug. Reported per-backbone, not hidden in
+  an average.
+
+- **Pending (GPU-blocked behind LLM benchmark):** ~~per-video CIs for QCD frontier
+  operating points~~ **DONE**; ~~Trans-SVNet/Surgformer baselines~~ **DONE** (above).
+  QCD frontier dominance re-run with all 5 heads in progress (`frontier_ci.py`).

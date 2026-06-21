@@ -26,6 +26,8 @@ import torch.nn.functional as F
 from mstcn import MultiStageTCN
 from lovit import LoViT
 from asformer import ASFormer
+from transsvnet import TransSVNet
+from surgformer import Surgformer
 from phases import NUM_PHASES
 from splits import TRAIN_IDS, VAL_IDS
 
@@ -128,7 +130,8 @@ def main():
     ap.add_argument("--features", required=True, type=Path)
     ap.add_argument("--out", required=True, type=Path)
     ap.add_argument("--causal", action="store_true", help="causal -> online (TeCNO/LoViT-online)")
-    ap.add_argument("--model", choices=["mstcn", "lovit", "asformer"], default="mstcn")
+    ap.add_argument("--model", choices=["mstcn", "lovit", "asformer", "transsvnet", "surgformer"],
+                    default="mstcn")
     ap.add_argument("--stages", type=int, default=2)
     ap.add_argument("--layers", type=int, default=9, help="mstcn: 9; lovit: ~5")
     ap.add_argument("--fmaps", type=int, default=64, help="mstcn feature maps")
@@ -162,6 +165,14 @@ def main():
         model = ASFormer(in_dim=in_dim, num_classes=NUM_PHASES, num_stages=args.stages,
                          num_layers=args.layers, d=args.d, heads=args.heads,
                          causal=args.causal, boundary=args.boundary).to(device)
+    elif args.model == "transsvnet":
+        model = TransSVNet(in_dim=in_dim, num_classes=NUM_PHASES, num_stages=args.stages,
+                           num_layers=args.layers, d=args.d, heads=args.heads,
+                           causal=args.causal, boundary=args.boundary).to(device)
+    elif args.model == "surgformer":
+        model = Surgformer(in_dim=in_dim, num_classes=NUM_PHASES, num_stages=args.stages,
+                           num_layers=args.layers, d=args.d, heads=args.heads,
+                           causal=args.causal, boundary=args.boundary).to(device)
     else:
         model = MultiStageTCN(args.stages, args.layers, args.fmaps,
                               in_dim, NUM_PHASES, causal=args.causal,

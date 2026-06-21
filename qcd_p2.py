@@ -22,7 +22,7 @@ from splits import TRAIN_IDS, TEST_IDS
 
 FEAT = {"rn50": "features", "endovit": "features_endovit",
         "endovitft": "features_endovit_ft", "e2e": "features_e2e"}
-HEADS = ["tecno", "lovit_causal", "asformer"]
+HEADS = ["tecno", "lovit_causal", "asformer", "transsvnet", "surgformer"]
 SEEDS = [0, 1, 2, 3, 4]
 H_GRID = [2, 3, 5, 8, 12, 18, 26]
 WINDOWS = [3, 5, 9, 15, 25, 41]
