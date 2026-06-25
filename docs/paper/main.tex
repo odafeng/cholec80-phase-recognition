@@ -24,33 +24,45 @@ as Quickest Change Detection}
 \maketitle
 
 \begin{abstract}
-Frame-level accuracy on Cholec80 is saturated, yet it is a poor proxy for the
-online deployability of a surgical phase recognition system: dominated by long,
-stable phases, it is blind to how cleanly and promptly phase \emph{transitions}
-are detected, and to whether the model's confidence can be trusted. We make three
-contributions in the clinically realistic online/causal setting. \textbf{(i)} A
-reproducible \emph{reliability evaluation suite}---relaxed accuracy, segmental
-F1/edit, over-segmentation, transition-detection latency and false-alarms, and a
-new \emph{boundary-region ECE} that exposes calibration failure localised at phase
-transitions which standard ECE averages away. Applied identically across five
-feature backbones and three causal temporal heads, it reveals failure modes that
-are universal and invisible to accuracy: over-segmentation up to $10\times$ and
-boundary-region calibration error $3$--$5\times$ the phase interior.
-\textbf{(ii)} We \emph{reframe} online phase recognition as \emph{multi-phase
-quickest change detection} (QCD). A CUSUM detector on the model's calibrated phase
-posteriors, constrained by a phase-transition graph, enjoys a model-independent
-structural bound on over-segmentation and---being asymptotically delay-optimal for
-a given false-alarm rate---dominates hand-crafted post-processing on the
-over-segmentation/latency frontier in $\sim$10/12 backbone-head cells, at a tunable
-accuracy cost. \textbf{(iii)} A \emph{learned} causal sequential detector that
-generalises the fixed rule reaches an operating point unreachable by fixed CUSUM or
-heuristics---preserving frame accuracy \emph{and} low latency simultaneously. On a
-different procedure (Cataract-101) the failure modes recur, confirming generality,
-and the QCD dominance replicates under per-video CIs---milder in absolute terms, as
-transitions are sharper---confirming generality while showing the benefit's magnitude is
-procedure dependent. We report negative and nuanced results faithfully. Code and configurations are
-released.
+\noindent\textbf{Purpose.} Frame-level accuracy on Cholec80 is saturated yet is a poor
+proxy for the online deployability of surgical phase recognition: dominated by long, stable
+phases, it is blind to how cleanly and promptly phase \emph{transitions} are detected and to
+whether the model's confidence can be trusted---precisely the properties an intra-operative
+system needs for alerting, automated documentation, and workflow analysis. We aim to measure
+these deployment-relevant failure modes and to provide a principled online decoder that
+targets them.
+
+\noindent\textbf{Methods.} We introduce a reproducible reliability suite---relaxed accuracy,
+segmental F1/edit, over-segmentation, transition latency/false-alarms, and a new
+\emph{boundary-region ECE}---applied identically across five feature backbones and five
+causal temporal heads. We reframe online phase recognition as multi-phase \emph{quickest
+change detection}: a CUSUM/Shiryaev--Roberts detector on the model's calibrated posteriors,
+constrained by a phase-transition graph estimated from training labels, with a
+model-independent structural over-segmentation bound and asymptotic delay-optimality; a
+learned causal detector generalises the fixed rule. Analyses are per-(video, seed) with
+cluster-bootstrap confidence intervals, Holm correction, and TOST non-inferiority.
+
+\noindent\textbf{Results.} Strong online heads over-segment up to $10\times$ and are
+$4.3\times$ $[3.7,5.1]$ worse calibrated at transitions than in phase interiors
+($p<10^{-20}$), invisible to ${\sim}88\%$ frame accuracy. At matched over-segmentation the
+detector lowers transition-detection latency by $2.2$\,s $[1.6,2.9]$ (36/40 videos,
+$p_{\text{Holm}}<0.001$) at non-inferior accuracy---the axis hand-crafted post-processing
+cannot move---and the learned detector preserves frame accuracy \emph{and} low latency
+simultaneously. On a different procedure (Cataract-101) the failure modes recur and the
+benefit replicates, milder where transitions are sharp.
+
+\noindent\textbf{Conclusion.} High frame accuracy is not reliability. Measuring online phase
+recognition with a boundary-localised, transition-aware suite exposes universal,
+accuracy-hidden failure modes; reframing the task as quickest change detection brings
+sequential optimality and a structural over-segmentation guarantee to the
+deployment-relevant axes, and the gains generalise across procedures. We report negative and
+nuanced results faithfully. Code and configurations are released.
 \end{abstract}
+
+\smallskip
+\noindent\textbf{Keywords:}\; Surgical phase recognition \textperiodcentered\ Online/causal
+inference \textperiodcentered\ Quickest change detection \textperiodcentered\ Calibration
+\textperiodcentered\ Reliability evaluation \textperiodcentered\ Cholec80
 
 \section{Introduction}
 Automated recognition of the surgical phase from laparoscopic video underpins
@@ -399,6 +411,16 @@ published online range), and the per-video bootstrap dominance result above pool
 heads over 125 cells. The self-trained MAE backbone degrades every head---old and new---
 alike, a backbone-quality effect rather than a head defect.
 
+\paragraph{Clinical significance.} The three axes our suite and decoder target map directly
+onto deployment requirements. Over-segmentation governs whether automated documentation and
+workflow analytics are usable---a stream that thrashes between phases is unreadable;
+transition latency governs whether intra-operative alerts and context-aware assistance fire
+in time; and boundary-region calibration governs whether a system can be trusted to defer or
+raise an alert exactly when decisions are hardest, i.e.\ at transitions. Frame accuracy
+guarantees none of these. By giving the principled detector a structural over-segmentation
+bound and a delay-optimality guarantee, and by making calibration part of the method, we
+target the properties that determine clinical utility rather than a saturated benchmark score.
+
 \section{Conclusion}
 High frame accuracy is not reliability. Measuring online phase recognition with a
 boundary-localised, transition-aware suite exposes universal failure modes that
@@ -406,6 +428,16 @@ accuracy hides; reframing the problem as quickest change detection brings sequen
 optimality and a structural over-segmentation guarantee; and a learned sequential
 detector reaches a high-accuracy, low-latency operating point that fixed rules
 cannot. The benefits are largest precisely where surgery is messiest.
+
+\section*{Declarations}
+\noindent\textbf{Ethical approval.} This study uses only publicly available, de-identified
+benchmark datasets (Cholec80, Cataract-101); no ethical approval or informed consent was
+required.\\
+\noindent\textbf{Conflict of interest.} The authors declare no competing interests.\\
+\noindent\textbf{Funding.} \todo{funding sources, or ``no external funding''}.\\
+\noindent\textbf{Data availability.} Cholec80 and Cataract-101 are publicly available from
+their original providers; code and configurations to reproduce all results are released at
+\todo{repository URL}.
 
 \begin{thebibliography}{99}\small
 \bibitem{twinanda2017} A.~P. Twinanda et al. EndoNet: A deep architecture for
