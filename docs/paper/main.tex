@@ -17,7 +17,7 @@
 \title{\bfseries Beyond Frame Accuracy: Online Surgical Phase Recognition\\
 as Quickest Change Detection}
 \author[1]{odafeng}
-\affil[1]{\small (affiliation)}
+\affil[1]{\small \todo{affiliation --- fill before submission}}
 \date{}
 
 \begin{document}
@@ -46,8 +46,9 @@ accuracy cost. \textbf{(iii)} A \emph{learned} causal sequential detector that
 generalises the fixed rule reaches an operating point unreachable by fixed CUSUM or
 heuristics---preserving frame accuracy \emph{and} low latency simultaneously. On a
 different procedure (Cataract-101) the failure modes recur, confirming generality,
-though their severity---and hence the benefit of QCD---is procedure dependent. We
-report negative and nuanced results faithfully. Code and configurations are
+and the QCD dominance replicates under per-video CIs---milder in absolute terms, as
+transitions are sharper---confirming generality while showing the benefit's magnitude is
+procedure dependent. We report negative and nuanced results faithfully. Code and configurations are
 released.
 \end{abstract}
 
@@ -346,16 +347,20 @@ CUSUM ($\le$2)       & 1.6 & 74.0 & 6.9 & 70.1 \\
 \subsection{Cross-procedure generalisation (Cataract-101)}
 \label{sec:cross}
 We replicate the full pipeline on Cataract-101, a procedure utterly different from
-cholecystectomy (eye microsurgery, 10 phases). A TeCNO trained on cataract reaches
-92.3\% validation accuracy. The same failure modes recur---over-segmentation
-$2.9\times$ and boundary-region ECE 14.6\%, hidden by 87.4\% frame
-accuracy---confirming that the phenomenon is general and not a Cholec80 artefact.
-However, both are \emph{milder} than on Cholec80: cataract has short phases and
-sharp transitions, so detection latencies are already tiny (1--3\,s vs.\ 6--20\,s)
-and over-segmentation already low. Consequently the QCD benefit is smaller here,
-while the CUSUM accuracy cost persists (87.4\%$\to$83.7\%). The honest reading is
-that the failure modes generalise but their \emph{severity}---and hence the payoff
-of principled decoding---is procedure dependent, largest on messy, long-phase
+cholecystectomy (eye microsurgery, 10 phases), with a causal TeCNO over five seeds
+(92.5\% validation accuracy) and per-video cluster-bootstrap CIs over the 21 test videos.
+The same failure modes recur---over-segmentation $2.83\times$ $[2.21,3.54]$ and
+boundary-region ECE $13.4\%$ $[10.4,16.5]$, hidden by ${\sim}88\%$ frame
+accuracy---confirming that the phenomenon is general and not a Cholec80 artefact. The QCD
+dominance also replicates: at matched over-segmentation the unconstrained-graph CUSUM
+lowers latency by $0.21$\,s $[0.15,0.28]$ and \emph{raises} segmental F1@10 by
+$1.35$ $[0.45,2.30]$ at non-inferior accuracy ($+0.22\%$), while the estimated graph again
+trades accuracy ($-4.9\%$) for tighter segmentation. The effect is \emph{milder} in
+absolute terms---cataract has short phases and sharp transitions, so latencies are already
+tiny ($\sim$0.5--0.8\,s vs.\ 6--26\,s)---so much so that a single-seed run reads as a
+\emph{tie}; only the five-seed CIs reveal the smaller-but-significant win. The honest
+reading is that the failure modes and the principled-decoding benefit both generalise,
+while the benefit's \emph{magnitude} is procedure dependent, largest on messy, long-phase
 procedures.
 
 \section{Discussion and Limitations}
@@ -373,19 +378,26 @@ v1 motivation: pooled over the grid, heuristic post-processing significantly imp
 F1@10 ($\Delta{=}{+}19.6$), edit ($+17.6$), and over-segmentation ($+3.3\times$), and
 is accuracy-non-inferior (TOST, CI lower bound ${+}0.5\%$), but its effect on
 transition \emph{latency} is \emph{not} significant ($\Delta{=}{-}0.3$\,s, $p{=}0.90$
-Holm) --- precisely the axis on which the principled QCD detector is needed. The
-frontier-dominance comparison is reported as point estimates across the twelve cells;
-per-video CIs for the QCD operating points require re-running the decoders with cached
-posteriors (in progress).
+Holm) --- precisely the axis on which the principled QCD detector is needed. Beyond the
+per-cell point estimates, we re-ran the decoders on cached posteriors to obtain per-video
+cluster-bootstrap CIs for the QCD operating points across the full five-backbone $\times$
+five-head $\times$ five-seed grid (125 cells): at matched over-segmentation the
+unconstrained-graph CUSUM lowers detection latency by $2.2$\,s $[1.6,2.9]$ (36/40 videos,
+$p_{\text{Holm}}<0.001$) at \emph{non-inferior} accuracy ($+0.25\%$ $[0.07,0.45]$),
+establishing the frontier dominance with intervals rather than point estimates, while the
+estimated (ordered) graph trades $-8.7\%$ accuracy for tighter segmentation.
 \textbf{(iii) Backbones.} Our self-trained single-dataset MAE yields weak frozen
 features (a known property of MAE, which favours fine-tuning); it serves as an
 honest contamination-free control rather than a state-of-the-art backbone.
 \textbf{(iv) Datasets.} Cholec80 is the primary dataset; Cataract-101 provides one
 cross-procedure point. We attempted to obtain AutoLaparo (hysterectomy) but its
 distribution link has been unreachable for several months.
-\textbf{(v) Heads.} We compare three causal heads; integrating recent baselines
-(Trans-SVNet, Surgformer) is ongoing and only adds posterior sources to the same
-analysis.
+\textbf{(v) Heads.} The diagnosis and the per-cell frontier tables use three causal heads;
+we additionally trained causal Trans-SVNet and Surgformer (5 backbones $\times$ 5 seeds;
+$85.1\%$ and $86.3\%$ mean frame accuracy on the four standard backbones, within the
+published online range), and the per-video bootstrap dominance result above pools all five
+heads over 125 cells. The self-trained MAE backbone degrades every head---old and new---
+alike, a backbone-quality effect rather than a head defect.
 
 \section{Conclusion}
 High frame accuracy is not reliability. Measuring online phase recognition with a

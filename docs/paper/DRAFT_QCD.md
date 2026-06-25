@@ -1,5 +1,8 @@
 # Online Surgical Phase Recognition as Quickest Change Detection: A Principled, Provably-Bounded Decoder that Dominates Heuristic Post-Processing
 
+> **Note:** `main.tex` is the canonical, submission-track version (LaTeX, final numbers +
+> bibliography). This markdown is a planning draft — prefer `main.tex` for editing.
+
 *Working draft — Cholec80 (primary) + Cataract-101 (cross-procedure). Target: IJCARS /
 Computers in Biology and Medicine / IEEE JBHI. Numbers in **[[brackets]]** are to be
 auto-filled / double-checked from `results/`; non-bracketed numbers are from the current
